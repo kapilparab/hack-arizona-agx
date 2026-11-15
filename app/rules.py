@@ -1,10 +1,14 @@
 import math
+import numpy as np
+from scipy.interpolate import PchipInterpolator
 from typing import Tuple, List, Optional
 from app.schemas import (
     TowerReading, ChemicalProduct, Assessment, StatusEnum,
     RuleEvaluation, TeeJetNozzleType, ChemicalCategory, SpatialPlumeGeometry,
     HeightLevelReading, HeightProfile, MultiHeightInversionAnalysis,
-    InversionTypeEnum, InversionSeverityEnum, POPULAR_PRODUCTS
+    InversionTypeEnum, InversionSeverityEnum, SprayMethodEnum,
+    SprayMethodInfo, SPRAY_METHOD_CONFIGS, SprayHeightRiskAnalysis,
+    InterpolatedHeightPoint, POPULAR_PRODUCTS
 )
 
 
@@ -236,6 +240,196 @@ def analyze_multi_height_profile(r: TowerReading) -> Tuple[HeightProfile, MultiH
     return profile, analysis
 
 
+class AtmosphericProfileInterpolator:
+    """
+    Continuous microclimate interpolator using Piecewise Cubic Hermite Interpolating Polynomials (PCHIP)
+    for vertical temperature and wind profiles across the agricultural boundary layer.
+    Guarantees monotonicity between measured sounding heights without oscillatory artifacts,
+    and resolves wind direction across circular unit vectors (u, v).
+    """
+
+    def __init__(self, reading: TowerReading):
+        self.reading = reading
+        self._build_models()
+
+    def _build_models(self):
+        r = self.reading
+        # Temperature anchors: 0m, 2m, 80m, 120m, 180m
+        self.t_heights = np.array([0.0, 2.0, 80.0, 120.0, 180.0], dtype=float)
+        self.t_vals = np.array([
+            r.t_ground_0m_f,
+            r.t_low_f,
+            r.t_high_f,
+            r.t_120m_f,
+            r.t_180m_f
+        ], dtype=float)
+        self.pchip_t = PchipInterpolator(self.t_heights, self.t_vals)
+
+        # Wind speed anchors: 0m (0 mph), 2m (canopy), 10m, 80m, 120m, 180m
+        w_canopy = max(0.0, r.wind_low_mph * 0.75)
+        self.w_heights = np.array([0.0, 2.0, 10.0, 80.0, 120.0, 180.0], dtype=float)
+        self.w_speeds = np.array([
+            0.0,
+            w_canopy,
+            r.wind_low_mph,
+            r.wind_high_mph,
+            r.wind_120m_mph,
+            r.wind_180m_mph
+        ], dtype=float)
+        self.pchip_speed = PchipInterpolator(self.w_heights, self.w_speeds)
+
+        # Wind direction anchors with circular vector decomposition
+        self.w_dirs = np.array([
+            r.dir_low_deg,
+            r.dir_low_deg,
+            r.dir_low_deg,
+            r.dir_high_deg,
+            r.dir_120m_deg,
+            r.dir_180m_deg
+        ], dtype=float)
+        rads = np.radians(self.w_dirs)
+        self.pchip_u = PchipInterpolator(self.w_heights, np.sin(rads))
+        self.pchip_v = PchipInterpolator(self.w_heights, np.cos(rads))
+
+    def temperature_at(self, h: float) -> float:
+        """Interpolates temperature in °F at height h in meters."""
+        h_clamped = max(0.0, float(h))
+        if h_clamped <= 180.0:
+            return float(self.pchip_t(h_clamped))
+        t_180 = float(self.pchip_t(180.0))
+        # Standard free atmospheric dry adiabatic lapse beyond 180m (~-1.8°F / 100m)
+        return float(t_180 - ((h_clamped - 180.0) / 100.0) * 1.8)
+
+    def wind_at(self, h: float) -> Tuple[float, float]:
+        """Interpolates (wind_speed_mph, wind_direction_deg) at height h in meters."""
+        h_clamped = max(0.0, float(h))
+        if h_clamped <= 180.0:
+            sp = max(0.0, float(self.pchip_speed(h_clamped)))
+            u = float(self.pchip_u(h_clamped))
+            v = float(self.pchip_v(h_clamped))
+        else:
+            sp = float(self.pchip_speed(180.0))
+            u = float(self.pchip_u(180.0))
+            v = float(self.pchip_v(180.0))
+        direction = (float(np.degrees(np.arctan2(u, v))) + 360.0) % 360.0
+        return round(sp, 1), round(direction, 1)
+
+    def lapse_rate_at(self, h: float, delta_h: float = 0.5) -> float:
+        """Computes local vertical lapse rate in °F per 100 meters at height h."""
+        h1 = max(0.0, float(h) - delta_h)
+        h2 = float(h) + delta_h
+        t1 = self.temperature_at(h1)
+        t2 = self.temperature_at(h2)
+        dh_100m = (h2 - h1) / 100.0
+        return round((t2 - t1) / dh_100m, 2)
+
+    def interpolate_heights(
+        self,
+        heights: List[float],
+        spray_height_m: Optional[float] = None
+    ) -> List[InterpolatedHeightPoint]:
+        points = []
+        t_ground = self.temperature_at(0.0)
+        t_spray = self.temperature_at(spray_height_m) if spray_height_m is not None else None
+
+        for h in sorted(heights):
+            temp = round(self.temperature_at(h), 2)
+            spd, d = self.wind_at(h)
+            lapse = self.lapse_rate_at(h)
+            dt_ground = round(temp - t_ground, 2)
+            dt_spray = round(temp - t_spray, 2) if t_spray is not None else None
+            is_inv = lapse > 0.0
+
+            points.append(InterpolatedHeightPoint(
+                height_m=round(h, 2),
+                temp_f=temp,
+                wind_speed_mph=spd,
+                wind_dir_deg=d,
+                lapse_rate_f_per_100m=lapse,
+                delta_t_from_ground_f=dt_ground,
+                delta_t_from_spray_f=dt_spray,
+                is_inverted_locally=is_inv
+            ))
+        return points
+
+    def analyze_spray_height(
+        self,
+        spray_method: SprayMethodEnum = SprayMethodEnum.TRACTOR,
+        custom_height_m: Optional[float] = None
+    ) -> SprayHeightRiskAnalysis:
+        if custom_height_m is not None and custom_height_m > 0:
+            h_spray = float(custom_height_m)
+        else:
+            cfg = SPRAY_METHOD_CONFIGS.get(spray_method.value, SPRAY_METHOD_CONFIGS["tractor"])
+            h_spray = cfg.default_spray_height_m
+
+        h_plus_1m = round(h_spray + 1.0, 2)
+        h_plus_3m = round(h_spray + 3.0, 2)
+
+        t_spray = round(self.temperature_at(h_spray), 2)
+        t_plus_1m = round(self.temperature_at(h_plus_1m), 2)
+        t_plus_3m = round(self.temperature_at(h_plus_3m), 2)
+
+        dt_1m = round(t_plus_1m - t_spray, 2)
+        dt_3m = round(t_plus_3m - t_spray, 2)
+
+        w_spray, d_spray = self.wind_at(h_spray)
+        w_plus_1m, d_plus_1m = self.wind_at(h_plus_1m)
+        w_plus_3m, d_plus_3m = self.wind_at(h_plus_3m)
+
+        shear_1m = round(abs(w_plus_1m - w_spray), 1)
+        shear_3m = round(abs(w_plus_3m - w_spray), 1)
+
+        dir_shear_1m = round(angle_diff(d_plus_1m, d_spray), 1)
+        dir_shear_3m = round(angle_diff(d_plus_3m, d_spray), 1)
+
+        inv_detected = (dt_3m > 0.0 or dt_1m > 0.0)
+
+        if dt_3m >= 2.0 or dt_1m >= 1.5:
+            severity = "Severe Spray-Plane Inversion (Lid Active)"
+            risk = StatusEnum.STOP
+            rec = f"DO NOT SPRAY: Strong thermal inversion lid (+{dt_3m:.1f}°F at +3m) directly capping {h_spray:.1f}m spray plane. Droplets will form horizontal drift cloud."
+        elif dt_3m > 0.0 or dt_1m > 0.0:
+            severity = "Moderate Spray-Plane Inversion (Lid Active)"
+            risk = StatusEnum.STOP
+            rec = f"DO NOT SPRAY: Positive thermal gradient (+{dt_3m:.1f}°F at +3m) capping spray release plane. Violates EPA spray drift inversion mandate."
+        elif abs(dt_3m) < 0.05 and abs(dt_1m) < 0.02:
+            severity = "Isothermal / Transitioning"
+            risk = StatusEnum.CAUTION
+            rec = f"CAUTION: Neutral temperature gradient at spray plane. Inversion may be transitioning."
+        else:
+            severity = "Normal Lapse (Safe Vertical Dispersion)"
+            risk = StatusEnum.GO
+            rec = f"GO: Normal lapse rate ({dt_3m:.1f}°F at +3m above release) allows safe vertical dispersion."
+
+        return SprayHeightRiskAnalysis(
+            spray_method=spray_method,
+            spray_height_m=round(h_spray, 2),
+            height_plus_1m=h_plus_1m,
+            height_plus_3m=h_plus_3m,
+            temp_at_spray_height_f=t_spray,
+            temp_at_plus_1m_f=t_plus_1m,
+            temp_at_plus_3m_f=t_plus_3m,
+            delta_t_1m_f=dt_1m,
+            delta_t_3m_f=dt_3m,
+            wind_at_spray_height_mph=w_spray,
+            wind_at_plus_1m_mph=w_plus_1m,
+            wind_at_plus_3m_mph=w_plus_3m,
+            dir_at_spray_height_deg=d_spray,
+            dir_at_plus_1m_deg=d_plus_1m,
+            dir_at_plus_3m_deg=d_plus_3m,
+            wind_shear_1m_mph=shear_1m,
+            wind_shear_3m_mph=shear_3m,
+            dir_shear_1m_deg=dir_shear_1m,
+            dir_shear_3m_deg=dir_shear_3m,
+            spray_inversion_detected=inv_detected,
+            spray_inversion_active=inv_detected,
+            spray_inversion_severity=severity,
+            spray_plane_risk=risk,
+            recommendation=rec
+        )
+
+
 def calculate_drift_distance(
     wind_mph: float,
     nozzle: TeeJetNozzleType,
@@ -298,13 +492,18 @@ def assess_drift_risk(
     r: TowerReading,
     product: Optional[ChemicalProduct] = None,
     nozzle: TeeJetNozzleType = TeeJetNozzleType.MEDIUM,
-    boom_height_inches: int = 24
+    boom_height_inches: int = 24,
+    spray_method: SprayMethodEnum = SprayMethodEnum.TRACTOR,
+    spray_height_m: Optional[float] = None
 ) -> Assessment:
     prod = product or POPULAR_PRODUCTS["radiant"]
     evals: List[RuleEvaluation] = []
     level = 0  # 0: GO, 1: CAUTION, 2: STOP
 
     profile, multi_analysis = analyze_multi_height_profile(r)
+    interpolator = AtmosphericProfileInterpolator(r)
+    spray_analysis = interpolator.analyze_spray_height(spray_method, spray_height_m)
+
     delta_t = multi_analysis.canopy_to_80m_delta_f
     wind_shear = multi_analysis.max_wind_shear_mph
     dir_shear = multi_analysis.max_dir_shear_deg
@@ -435,6 +634,26 @@ def assess_drift_risk(
             reason="Excessive boom height significantly widens the downwind drift cone in desert winds."
         ))
 
+    # 6. Spray-Plane Inversion Lid (+1m and +3m Above Release Height)
+    if spray_analysis.spray_plane_risk == StatusEnum.STOP:
+        level = max(level, 2)
+        evals.append(RuleEvaluation(
+            rule_name="Spray-Plane Inversion Lid (+1m/+3m Above Release)",
+            status=StatusEnum.STOP,
+            measured=f"+{spray_analysis.delta_t_3m_f:.1f}°F at +3m above {spray_analysis.spray_height_m}m {spray_analysis.spray_method.value} release",
+            threshold="<= 0.0°F (normal lapse)",
+            reason=spray_analysis.recommendation
+        ))
+    elif spray_analysis.spray_plane_risk == StatusEnum.CAUTION:
+        level = max(level, 1)
+        evals.append(RuleEvaluation(
+            rule_name="Spray-Plane Atmospheric Mixing",
+            status=StatusEnum.CAUTION,
+            measured=f"{spray_analysis.delta_t_3m_f:.1f}°F at +3m above {spray_analysis.spray_height_m}m release",
+            threshold="< -1.0°F",
+            reason=spray_analysis.recommendation
+        ))
+
     overall_status = [StatusEnum.GO, StatusEnum.CAUTION, StatusEnum.STOP][level]
     ground_status = evaluate_ground_station_only(r, prod)
     blind_spot_caught = (ground_status == StatusEnum.GO and overall_status != StatusEnum.GO)
@@ -489,5 +708,6 @@ def assess_drift_risk(
         boom_height_inches=boom_height_inches,
         multi_height_analysis=multi_analysis,
         height_profile=profile,
+        spray_risk_analysis=spray_analysis,
         spatial_plume=plume
     )

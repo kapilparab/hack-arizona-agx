@@ -44,6 +44,27 @@ Standard agricultural weather stations sample microclimate at a single height (~
 4. **Mid Aloft (120m / ~394 ft — `temperature_120m`)**: Captures intermediate boundary-layer decoupling and elevated capping layers.
 5. **High Aloft (180m / ~591 ft — `temperature_180m`)**: Captures synoptic desert inversion lids and regional subsidence layers. An elevated warm lid at 120m–180m creates a dangerous blind spot where surface stations observe normal lapse, yet chemical plumes rising past 80m become trapped and travel for miles before descending onto adjacent fields.
 
+### Continuous Height Interpolation & Spray Method Inversion Analysis (+1m & +3m Above Release)
+Agricultural spray applicators operate equipment across fundamentally different vertical release envelopes:
+- **Ground Boom Tractor (`tractor`)**: Standard boom release at **0.6m (~24 inches)** above crop canopy.
+- **Orchard Airblast Sprayers (`orchard_airblast`)**: Upward canopy projection at **3.0m (~10 ft)**.
+- **Agricultural Spray Drones / UAVs (`drone`)**: Low-altitude autonomous flight at **2.5m (~8 ft)** above crop canopies.
+- **Agricultural Aircraft / Aerial Application (`aircraft`)**: Fixed-wing or helicopter release at **4.5m (~15 ft)**.
+- **Custom Applicators (`custom`)**: User-defined arbitrary release height.
+
+**Why +1m and +3m Above Spray Height?**
+In agricultural micrometeorology and ASABE/EPA drift standards, assessing the inversion at the exact spray release plane ($h_{\text{spray}}$) requires sampling temperatures **1 meter and 3 meters directly above the spray release zone**:
+$$\Delta T_{1\text{m}} = T(h_{\text{spray}} + 1\text{m}) - T(h_{\text{spray}})$$
+$$\Delta T_{3\text{m}} = T(h_{\text{spray}} + 3\text{m}) - T(h_{\text{spray}})$$
+If $\Delta T_{3\text{m}} > 0^{\circ}\text{F}$, a localized thermal inversion lid directly caps the spray plane. Droplets released by the nozzles cannot disperse vertically; instead, they are held in concentrated horizontal suspension, traveling off-target downwind.
+Furthermore, wind speed and directional shear at $h_{\text{spray}} + 1\text{m}$ and $+3\text{m}$ determine if fine droplets detaching from the spray swath are sheared into neighboring fields.
+
+**Physics-Informed Monotonic PCHIP & Vector Interpolation Model**:
+To provide continuous microclimate data at any arbitrary height $h$ requested by the user or frontend:
+1. **Temperature ($T(h)$)**: Uses Piecewise Cubic Hermite Interpolating Polynomials (PCHIP) across $[0\text{m}, 2\text{m}, 80\text{m}, 120\text{m}, 180\text{m}]$, preserving monotonicity and preventing unphysical oscillatory extremes.
+2. **Wind Speed ($V(h)$)**: Monotonic boundary-layer interpolation from surface skin up through 180m.
+3. **Wind Direction ($\theta(h)$)**: Unit-vector decomposition ($u = \sin\theta, v = \cos\theta$) interpolated independently and recombined via circular $\text{atan2}(u, v)$ to eliminate 0°/360° discontinuities.
+
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │             CanopyGuard Pro — Multi-Height Vertical Stratification Architecture        │
@@ -308,6 +329,64 @@ class SpatialPlumeGeometry(BaseModel):
     buffer_encroachment: bool
     encroached_parcels: List[str]
 
+class SprayMethodEnum(str, Enum):
+    TRACTOR = "tractor"
+    GROUND_BOOM = "ground_boom"
+    ORCHARD_AIRBLAST = "orchard_airblast"
+    DRONE = "drone"
+    AIRCRAFT = "aircraft"
+    CUSTOM = "custom"
+
+class SprayMethodInfo(BaseModel):
+    method: SprayMethodEnum
+    name: str
+    default_spray_height_m: float
+    default_spray_height_ft: float
+    description: str
+    typical_droplet_spectrum: str
+
+class SprayHeightRiskAnalysis(BaseModel):
+    spray_method: SprayMethodEnum
+    spray_height_m: float
+    height_plus_1m: float
+    height_plus_3m: float
+    temp_at_spray_height_f: float
+    temp_at_plus_1m_f: float
+    temp_at_plus_3m_f: float
+    delta_t_1m_f: float = Field(..., description="T(+1m) - T(spray_height)")
+    delta_t_3m_f: float = Field(..., description="T(+3m) - T(spray_height) — primary spray-plane inversion metric")
+    wind_at_spray_height_mph: float
+    wind_at_plus_1m_mph: float
+    wind_at_plus_3m_mph: float
+    dir_at_spray_height_deg: float
+    dir_at_plus_1m_deg: float
+    dir_at_plus_3m_deg: float
+    wind_shear_1m_mph: float
+    wind_shear_3m_mph: float
+    dir_shear_1m_deg: float
+    dir_shear_3m_deg: float
+    spray_inversion_detected: bool = Field(..., description="True if T(+3m) > T(spray) or T(+1m) > T(spray)")
+    spray_inversion_severity: str
+    spray_plane_risk: StatusEnum
+    recommendation: str
+
+class InterpolatedHeightPoint(BaseModel):
+    height_m: float
+    temp_f: float
+    wind_speed_mph: float
+    wind_dir_deg: float
+    lapse_rate_f_per_100m: float
+    delta_t_from_ground_f: float
+    delta_t_from_spray_f: Optional[float] = None
+    is_inverted_locally: bool
+
+class HeightInterpolationResponse(BaseModel):
+    timestamp: datetime
+    location_name: str
+    requested_heights: List[float]
+    points: List[InterpolatedHeightPoint]
+    spray_analysis: SprayHeightRiskAnalysis
+
 class Assessment(BaseModel):
     timestamp: datetime
     overall_status: StatusEnum
@@ -325,6 +404,7 @@ class Assessment(BaseModel):
     boom_height_inches: int
     multi_height_analysis: Optional[MultiHeightInversionAnalysis] = None
     height_profile: Optional[HeightProfile] = None
+    spray_risk_analysis: Optional[SprayHeightRiskAnalysis] = None
     spatial_plume: Optional[SpatialPlumeGeometry] = None
 ```
 
@@ -1166,6 +1246,27 @@ def get_profile(
         "profile": profile,
         "analysis": analysis
     }
+
+@app.get("/interpolate", response_model=HeightInterpolationResponse)
+def get_interpolated_profile(
+    heights: str = Query("0.6,1.6,2.0,3.6,5.0,10.0,20.0,50.0,80.0,120.0,180.0", description="Comma-separated list of heights in meters"),
+    spray_method: SprayMethodEnum = Query(SprayMethodEnum.TRACTOR),
+    spray_height_m: Optional[float] = Query(None, description="Optional custom spray height in meters"),
+    source: str = Query("scenario", enum=["live", "scenario", "custom"]),
+    scenario_id: str = Query("yuma_radiation_inversion"),
+    location_id: str = Query("yuma_valley")
+) -> HeightInterpolationResponse:
+    """
+    Interpolates continuous temperature and wind vector at arbitrary user-provided heights.
+    Calculates temperature and wind at 1m and 3m above the spray release plane to assess
+    micro-inversion lids directly capping the chemical swath.
+    """
+    ...
+
+@app.get("/spray-methods")
+def list_spray_methods():
+    """Returns available spray methods and default release heights for frontend selectors."""
+    ...
 
 @app.get("/map/parcels")
 def list_parcels():

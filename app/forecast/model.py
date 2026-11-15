@@ -1,8 +1,9 @@
 import math
 import numpy as np
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from sklearn.ensemble import HistGradientBoostingClassifier
+from app.schemas import SprayMethodEnum, SPRAY_METHOD_CONFIGS
 
 
 class SprayRiskForecaster:
@@ -73,11 +74,24 @@ class SprayRiskForecaster:
         current_t_low: float = 64.0,
         current_delta_t: float = 1.5,
         current_wind: float = 5.0,
-        start_hour: int = 6
+        start_hour: int = 6,
+        spray_method: SprayMethodEnum = SprayMethodEnum.TRACTOR,
+        spray_height_m: Optional[float] = None
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """
         Generates 12-hour hourly trajectory of spray risk, lapse rate burn-off, and safe windows.
+        Includes microclimate predictions at spray release height, +1m, and +3m above release.
         """
+        # Resolve spray release height
+        if spray_height_m is not None and spray_height_m > 0:
+            h_spray = float(spray_height_m)
+        else:
+            cfg = SPRAY_METHOD_CONFIGS.get(spray_method.value, SPRAY_METHOD_CONFIGS["tractor"])
+            h_spray = cfg.default_spray_height_m
+
+        h_plus_1m = round(h_spray + 1.0, 2)
+        h_plus_3m = round(h_spray + 3.0, 2)
+
         hourly_forecast: List[Dict[str, Any]] = []
         base_time = datetime.now().replace(minute=0, second=0, microsecond=0)
 
@@ -103,14 +117,37 @@ class SprayRiskForecaster:
             hour_offset_from_dawn = max(0, hour_of_day - 6)
             pred_temp = current_t_low + (min(hour_offset_from_dawn, 8) * 2.2)
 
-            # Afternoon wind pick-up
+            # Afternoon wind pick-up (surface ~10m reference)
             pred_wind = current_wind + (min(hour_offset_from_dawn, 8) * 0.6)
+
+            # Physical vertical profile calculation at spray plane, +1m, and +3m
+            if pred_delta_t > 0.0:
+                # Active inversion: warm air aloft, lapse rate is positive (warming with height)
+                # Rate of warming near surface is typically ~0.3°F to 0.8°F per meter
+                lapse_spray = min(1.2, max(0.1, pred_delta_t / 15.0))
+                t_spray = pred_temp - (max(0.0, 2.0 - h_spray) * lapse_spray)
+                t_plus_1m = t_spray + (1.0 * lapse_spray)
+                t_plus_3m = t_spray + (3.0 * lapse_spray)
+            else:
+                # Normal lapse: cooling with height (~ -0.015°F per meter)
+                lapse_spray = -0.015
+                t_spray = pred_temp - ((h_spray - 2.0) * lapse_spray)
+                t_plus_1m = t_spray + (1.0 * lapse_spray)
+                t_plus_3m = t_spray + (3.0 * lapse_spray)
+
+            dt_3m = round(t_plus_3m - t_spray, 2)
+
+            # Wind speed at spray heights (power-law wind profile: V(z) = V10 * (z/10)^0.25)
+            w_spray = round(pred_wind * ((max(0.2, h_spray) / 10.0) ** 0.25), 1)
+            w_plus_1m = round(pred_wind * ((max(0.5, h_plus_1m) / 10.0) ** 0.25), 1)
+            w_plus_3m = round(pred_wind * ((max(0.8, h_plus_3m) / 10.0) ** 0.25), 1)
 
             feat = np.array([[hour_of_day, solar_rad, pred_temp, pred_delta_t, pred_wind]])
             prob_unsafe = float(self.clf.predict_proba(feat)[0][1])
 
-            # Classify status
-            if prob_unsafe > 0.55 or pred_delta_t > 0.0 or pred_wind < 3.0 or pred_wind > 10.0:
+            # Classify status incorporating spray plane inversion
+            spray_inv_active = (dt_3m > 0.0)
+            if prob_unsafe > 0.55 or pred_delta_t > 0.0 or pred_wind < 3.0 or pred_wind > 10.0 or spray_inv_active:
                 status = "STOP"
             elif prob_unsafe > 0.25 or pred_wind > 8.0:
                 status = "CAUTION"
@@ -129,7 +166,17 @@ class SprayRiskForecaster:
                 "predicted_delta_t_f": round(pred_delta_t, 1),
                 "predicted_wind_mph": round(pred_wind, 1),
                 "solar_radiation_w_m2": round(solar_rad, 0),
-                "inversion_burnoff_expected": burnoff
+                "inversion_burnoff_expected": burnoff,
+                # Microclimate at and above spray height
+                "spray_height_m": h_spray,
+                "temp_at_spray_height_f": round(t_spray, 1),
+                "temp_at_plus_1m_f": round(t_plus_1m, 1),
+                "temp_at_plus_3m_f": round(t_plus_3m, 1),
+                "delta_t_3m_f": dt_3m,
+                "wind_at_spray_height_mph": w_spray,
+                "wind_at_plus_1m_mph": w_plus_1m,
+                "wind_at_plus_3m_mph": w_plus_3m,
+                "spray_inversion_active": spray_inv_active
             })
 
         # Identify contiguous GO windows

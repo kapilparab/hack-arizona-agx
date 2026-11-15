@@ -105,3 +105,80 @@ def test_logs_and_export():
     assert csv_resp.status_code == 200
     assert "text/csv" in csv_resp.headers["content-type"]
     assert "overall_status" in csv_resp.text
+
+
+def test_spray_methods():
+    response = client.get("/spray-methods")
+    assert response.status_code == 200
+    data = response.json()
+    methods = {item["method"]: item for item in data}
+    assert "tractor" in methods
+    assert "drone" in methods
+    assert "aircraft" in methods
+    assert methods["drone"]["default_spray_height_m"] == 2.5
+    assert methods["aircraft"]["default_spray_height_m"] == 4.5
+    assert methods["tractor"]["default_spray_height_m"] == 0.6
+
+
+def test_interpolate_get():
+    response = client.get(
+        "/interpolate?source=scenario&scenario_id=yuma_radiation_inversion"
+        "&heights=0.5,1.5,2.5,3.5,5.5&spray_method=drone"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["requested_heights"]) == 5
+    assert len(data["points"]) == 5
+    assert data["spray_analysis"] is not None
+    assert data["spray_analysis"]["spray_method"] == "drone"
+    assert data["spray_analysis"]["spray_height_m"] == 2.5
+    assert "delta_t_1m_f" in data["spray_analysis"]
+    assert "delta_t_3m_f" in data["spray_analysis"]
+    assert "spray_inversion_detected" in data["spray_analysis"]
+
+
+def test_interpolate_post():
+    payload = {
+        "source": "scenario",
+        "scenario_id": "yuma_radiation_inversion",
+        "heights": [0.6, 1.6, 2.5, 3.6, 4.5, 7.5],
+        "spray_method": "aircraft",
+        "spray_height_m": 4.5,
+    }
+    response = client.post("/interpolate", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["points"]) == 6
+    assert data["spray_analysis"]["spray_method"] == "aircraft"
+    assert data["spray_analysis"]["spray_height_m"] == 4.5
+
+
+def test_assess_with_spray_method():
+    response = client.get(
+        "/assess?source=scenario&scenario_id=yuma_radiation_inversion&spray_method=aircraft"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["spray_risk_analysis"] is not None
+    assert data["spray_risk_analysis"]["spray_method"] == "aircraft"
+    assert data["spray_risk_analysis"]["spray_height_m"] == 4.5
+    assert data["spray_risk_analysis"]["spray_inversion_detected"] is True
+    assert data["spray_risk_analysis"]["spray_inversion_active"] is True
+
+
+def test_forecast_with_spray_method():
+    response = client.get(
+        "/forecast?source=scenario&scenario_id=yuma_radiation_inversion&spray_method=drone"
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["spray_method"] == "drone"
+    assert data["spray_height_m"] == 2.5
+    assert len(data["hourly_forecast"]) == 12
+    first_hour = data["hourly_forecast"][0]
+    assert "temp_at_spray_height_f" in first_hour
+    assert "temp_at_plus_1m_f" in first_hour
+    assert "temp_at_plus_3m_f" in first_hour
+    assert "delta_t_3m_f" in first_hour
+    assert "spray_inversion_active" in first_hour
+

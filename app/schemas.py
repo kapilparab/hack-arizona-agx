@@ -182,6 +182,122 @@ class SpatialPlumeGeometry(BaseModel):
     encroached_parcels: List[str]
 
 
+class SprayMethodEnum(str, Enum):
+    TRACTOR = "tractor"
+    GROUND_BOOM = "ground_boom"
+    ORCHARD_AIRBLAST = "orchard_airblast"
+    DRONE = "drone"
+    AIRCRAFT = "aircraft"
+    CUSTOM = "custom"
+
+
+class SprayMethodInfo(BaseModel):
+    method: SprayMethodEnum
+    name: str
+    default_spray_height_m: float
+    default_spray_height_ft: float
+    description: str
+    typical_droplet_spectrum: str
+
+
+SPRAY_METHOD_CONFIGS: Dict[str, SprayMethodInfo] = {
+    "tractor": SprayMethodInfo(
+        method=SprayMethodEnum.TRACTOR,
+        name="Ground Boom Tractor",
+        default_spray_height_m=0.6,
+        default_spray_height_ft=2.0,
+        description="Standard 20-24 inch boom height over vegetable and field crops (e.g. Yuma romaine, melon beds).",
+        typical_droplet_spectrum="Medium to Ultra-Coarse (XR, AIXR, TTI)"
+    ),
+    "ground_boom": SprayMethodInfo(
+        method=SprayMethodEnum.GROUND_BOOM,
+        name="Ground Boom Sprayer",
+        default_spray_height_m=0.6,
+        default_spray_height_ft=2.0,
+        description="Standard low-drift broadcast ground boom application.",
+        typical_droplet_spectrum="Medium to Ultra-Coarse (XR, AIXR, TTI)"
+    ),
+    "orchard_airblast": SprayMethodInfo(
+        method=SprayMethodEnum.ORCHARD_AIRBLAST,
+        name="Orchard Airblast Sprayer",
+        default_spray_height_m=3.0,
+        default_spray_height_ft=10.0,
+        description="Upward and lateral air-assisted blast into tree canopies (citrus, pecans, dates). High drift susceptibility aloft.",
+        typical_droplet_spectrum="Fine to Medium (Disc-Core, TX Cone)"
+    ),
+    "drone": SprayMethodInfo(
+        method=SprayMethodEnum.DRONE,
+        name="Agricultural Spray Drone (UAV)",
+        default_spray_height_m=2.5,
+        default_spray_height_ft=8.2,
+        description="Low-altitude autonomous precision UAV spraying. Rotor downwash interacts heavily with surface thermal layers.",
+        typical_droplet_spectrum="Coarse to Very Coarse (AIXR, Centrifugal)"
+    ),
+    "aircraft": SprayMethodInfo(
+        method=SprayMethodEnum.AIRCRAFT,
+        name="Fixed-Wing / Helicopter Ag Aircraft",
+        default_spray_height_m=4.5,
+        default_spray_height_ft=15.0,
+        description="Aerial crop dusting at 10-15 ft flight level. Highly sensitive to aloft crosswinds and boundary-layer capping lids.",
+        typical_droplet_spectrum="Coarse to Very Coarse (CP Nozzles, Accu-Stream)"
+    ),
+    "custom": SprayMethodInfo(
+        method=SprayMethodEnum.CUSTOM,
+        name="Custom Equipment Height",
+        default_spray_height_m=1.0,
+        default_spray_height_ft=3.3,
+        description="User-defined arbitrary application release height.",
+        typical_droplet_spectrum="User Defined"
+    )
+}
+
+
+class SprayHeightRiskAnalysis(BaseModel):
+    spray_method: SprayMethodEnum
+    spray_height_m: float
+    height_plus_1m: float
+    height_plus_3m: float
+    temp_at_spray_height_f: float
+    temp_at_plus_1m_f: float
+    temp_at_plus_3m_f: float
+    delta_t_1m_f: float = Field(..., description="T(+1m) - T(spray_height)")
+    delta_t_3m_f: float = Field(..., description="T(+3m) - T(spray_height) — primary spray-plane inversion metric")
+    wind_at_spray_height_mph: float
+    wind_at_plus_1m_mph: float
+    wind_at_plus_3m_mph: float
+    dir_at_spray_height_deg: float
+    dir_at_plus_1m_deg: float
+    dir_at_plus_3m_deg: float
+    wind_shear_1m_mph: float
+    wind_shear_3m_mph: float
+    dir_shear_1m_deg: float
+    dir_shear_3m_deg: float
+    spray_inversion_detected: bool = Field(..., description="True if T(+3m) > T(spray) or T(+1m) > T(spray)")
+    spray_inversion_active: bool = Field(False, description="Alias for spray_inversion_detected")
+    spray_inversion_severity: str
+    spray_plane_risk: StatusEnum
+    recommendation: str
+
+
+class InterpolatedHeightPoint(BaseModel):
+    height_m: float
+    temp_f: float
+    wind_speed_mph: float
+    wind_dir_deg: float
+    lapse_rate_f_per_100m: float
+    delta_t_from_ground_f: float
+    delta_t_from_spray_f: Optional[float] = None
+    is_inverted_locally: bool
+
+
+class HeightInterpolationResponse(BaseModel):
+    timestamp: datetime
+    location_name: str
+    requested_heights: List[float]
+    points: List[InterpolatedHeightPoint]
+    spray_analysis: SprayHeightRiskAnalysis
+
+
 class Assessment(BaseModel):
     timestamp: datetime
     overall_status: StatusEnum
@@ -199,4 +315,5 @@ class Assessment(BaseModel):
     boom_height_inches: int
     multi_height_analysis: Optional[MultiHeightInversionAnalysis] = None
     height_profile: Optional[HeightProfile] = None
+    spray_risk_analysis: Optional[SprayHeightRiskAnalysis] = None
     spatial_plume: Optional[SpatialPlumeGeometry] = None

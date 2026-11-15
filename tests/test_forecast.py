@@ -1,5 +1,6 @@
 import pytest
 from app.forecast.model import SprayRiskForecaster
+from app.schemas import SprayMethodEnum
 
 
 def test_forecast_model_initialization():
@@ -29,3 +30,29 @@ def test_forecast_12h():
 
     # Windows should be a list
     assert isinstance(windows, list)
+
+
+def test_forecast_12h_with_spray_method():
+    forecaster = SprayRiskForecaster()
+    # Test with agricultural spray drone (2.5m)
+    hours, windows = forecaster.forecast_12h(
+        current_t_low=62.0,
+        current_delta_t=3.0,
+        current_wind=4.0,
+        start_hour=6,
+        spray_method=SprayMethodEnum.DRONE
+    )
+
+    assert len(hours) == 12
+    for h in hours:
+        assert h["spray_height_m"] == 2.5
+        assert "temp_at_spray_height_f" in h
+        assert "temp_at_plus_1m_f" in h
+        assert "temp_at_plus_3m_f" in h
+        assert "delta_t_3m_f" in h
+        assert "wind_at_spray_height_mph" in h
+        assert "wind_at_plus_1m_mph" in h
+        assert "wind_at_plus_3m_mph" in h
+        assert "spray_inversion_active" in h
+        # Wind at +3m should be >= wind at spray height due to vertical shear
+        assert h["wind_at_plus_3m_mph"] >= h["wind_at_spray_height_mph"]
