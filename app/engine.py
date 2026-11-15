@@ -10,6 +10,8 @@ Status meanings:
 Heights come from each reading's metadata (see app/measure.py); configurations
 such as the near-surface pair and the 5 ft / 30 ft tower are never treated as equivalent.
 """
+import hashlib
+import json
 import math
 from datetime import datetime
 from app.config import RULE_VERSION, DEFAULT_THRESHOLDS, thresholds as _thr
@@ -162,7 +164,8 @@ def neighbors(field: dict, areas: list, reading: dict | None, t: dict, product: 
 
 
 def assess(reading: dict | None, at: datetime, field: dict | None = None, areas: list = (),
-           product: dict | None = None, overrides: dict | None = None, trend: dict | None = None) -> dict:
+           product: dict | None = None, overrides: dict | None = None, trend: dict | None = None,
+           prev_reading: dict | None = None, observations: list | None = None) -> dict:
     t = _thr(overrides)
     checks = []
     problems, age = validate(reading, at, t)
@@ -264,6 +267,30 @@ def assess(reading: dict | None, at: datetime, field: dict | None = None, areas:
             checks.append(_check("shear", "Wind change with height", NA, "One wind height installed", "Needs wind at two heights",
                                  "Requirements register", "Speed and direction shear cannot be assessed on this mast; other checks continue.", blocking=False))
 
+    # Persistence: one clean reading after an inversion is not enough to clear it (prototype rule).
+    if not problems and prev_reading and prev_reading.get("lower", {}).get("temp_f") is not None and prev_reading.get("upper", {}).get("temp_f") is not None:
+        prev_dT = prev_reading["upper"]["temp_f"] - prev_reading["lower"]["temp_f"]
+        cur = next((c for c in checks if c["id"] == "inversion"), None)
+        if cur and cur["status"] == GO and prev_dT > metrics["delta_t_uncertainty_f"]:
+            checks.append(_check("inversion_persistence", "Inversion clearance (persistence)", CAUTION,
+                                 f"Previous reading {prev_dT:+.1f} °F, now {metrics['delta_t_f']:+.1f} °F",
+                                 f"{t['inversion_clear_readings']:.0f} consecutive readings without an inversion", _src("inversion_clear_readings"),
+                                 "The inversion signal cleared in only one reading. It is not treated as gone until consecutive readings agree; sunrise or a forecast does not clear it.",
+                                 blocking=False))
+    metrics["trend_class"] = classify_trend(trend, metrics, t)
+    # Field observations: supporting evidence only. They can add caution, never clear a flag.
+    for o in observations or []:
+        signs = [k for k in ("dust_suspended", "smoke_layer", "fog", "dew", "frost") if o.get("items", {}).get(k) == "yes"]
+        if signs:
+            checks.append(_check(f"obs_{o['id']}", "Field observation", CAUTION, ", ".join(s_.replace("_", " ") for s_ in signs),
+                                 "Supporting evidence", f"Observed by {o.get('observer') or 'unnamed observer'} at {o.get('scenario_time', '')[11:16]}",
+                                 "A field observer reported signs consistent with stable air near the surface. This supports caution; it does not replace sensor checks.",
+                                 blocking=False))
+        if o.get("items", {}).get("wind_variability") == "variable":
+            checks.append(_check(f"obsw_{o['id']}", "Field observation: wind", CAUTION, "Variable local wind", "Supporting evidence",
+                                 f"Observed by {o.get('observer') or 'unnamed observer'}",
+                                 "The observer reported variable local wind; direction-based checks may be unreliable.", blocking=False))
+
     nb = neighbors(field, list(areas), None if problems else reading, t, product) if field else []
     for n in nb:
         if n["blocking"]:
@@ -282,7 +309,9 @@ def assess(reading: dict | None, at: datetime, field: dict | None = None, areas:
     g = ground_only(reading, t)
     headline = {GO: "Go - no configured flags", CAUTION: "Caution - review flags", STOP: "Stop - do not start",
                 INSUFFICIENT: "Insufficient data - cannot assess"}[status]
+    decision = {"rule_version": RULE_VERSION, "id": decision_id(reading, at, field, product, t, observations)}
     return {
+        "decision": decision, "decision_id": decision["id"],
         "time": at.isoformat(), "status": status, "headline": headline, "reason": reason,
         "checks": checks, "metrics": metrics, "reading": reading, "ground_only": g,
         "blind_spot": g["status"] == GO and status in (STOP, CAUTION) and any(
@@ -294,3 +323,33 @@ def assess(reading: dict | None, at: datetime, field: dict | None = None, areas:
                        "averaging": (reading or {}).get("averaging"), "gust_interval": (reading or {}).get("gust_interval"),
                        "shielding": (reading or {}).get("shielding"), "timezone": "MST (UTC-7)"},
     }
+
+
+def decision_id(reading, at, field, product, t, observations=None):
+    """Deterministic ID of one versioned decision: the same inputs and rule version give the same ID
+    on every screen (map, status, schedule, explanation, record)."""
+    key = {"rule": RULE_VERSION, "at": at.isoformat(), "field": (field or {}).get("id"), "product": (product or {}).get("name"),
+           "obs": [o.get("id") for o in observations or []], "thr": t,
+           "reading": None if not reading else {"at": reading.get("observed_at"), "sensor": reading.get("sensor_id"),
+                                                 "lo": [reading["lower"].get(k) for k in ("temp_f", "wind_mph", "dir_from_deg")],
+                                                 "up": [reading["upper"].get(k) for k in ("temp_f", "wind_mph", "dir_from_deg")]}}
+    return "d-" + hashlib.sha1(json.dumps(key, sort_keys=True, default=str).encode()).hexdigest()[:10]
+
+
+def classify_trend(trend, metrics, t):
+    """Developing / dissipating classification from successive aligned readings."""
+    if not trend or trend.get("points", 0) < 3:
+        return {"class": "uncertain", "text": "Not enough successive paired readings to judge a trend (needs 3)."}
+    u = metrics.get("delta_t_uncertainty_f") or 0.7
+    change = trend["per_hour_f"] * trend["window_min"] / 60
+    dT = metrics.get("delta_t_f")
+    wind = trend.get("wind_per_hour_mph")
+    wtxt = f" Lower wind changed {wind:+.1f} mph/h." if wind is not None else ""
+    if abs(change) <= u:
+        return {"class": "uncertain", "text": f"Temperature difference changed {change:+.1f} °F over {trend['window_min']} min - within the ±{u} °F uncertainty, so no clear trend.{wtxt}"}
+    if dT is not None and dT > 0:
+        cls = "strengthening" if change > 0 else "weakening"
+        return {"class": cls, "text": f"Inversion signal {cls}: {change:+.1f} °F over {trend['window_min']} min ({trend['points']} readings).{wtxt} A weakening trend does not clear the warning."}
+    cls = "developing" if change > 0 else "mixing"
+    return {"class": cls, "text": ("Upper air warming relative to lower air - an inversion may be developing." if cls == "developing"
+                                   else "Lower air warming relative to upper air - mixing is increasing.") + f" ({change:+.1f} °F over {trend['window_min']} min.){wtxt}"}

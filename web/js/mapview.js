@@ -191,9 +191,35 @@ function releaseFt() {
 }
 function renderStatus() {
   const fp = fieldProps(state.selectedField);
-  V.root.querySelector('#pane-status').innerHTML = statusPanel(V.assess, fp, releaseFt(), V.live && V.live.field === fp.id ? V.live : null);
+  V.root.querySelector('#pane-status').innerHTML = statusPanel(V.assess, fp, releaseFt(), V.live && V.live.field === fp.id ? V.live : null,
+    V.obs && V.obs.field === fp.id ? V.obs : null);
   V.root.querySelector('[data-load-live]')?.addEventListener('click', loadLive);
+  V.root.querySelector('[data-obs-form]')?.addEventListener('submit', submitObservation);
+  if (!V.obs || V.obs.field !== fp.id) loadObservations(fp.id);
   V.root.querySelector('#sheet-explain').dataset.field = fp.id;
+}
+async function loadObservations(fid) {
+  V.obs = { field: fid, meta: V.obsMeta || null, list: null };
+  try {
+    const o = await api('/api/observations?field_id=' + encodeURIComponent(fid));
+    if (!V || state.selectedField !== fid) return;
+    V.obsMeta = { items: o.items, rules: o.rules };
+    V.obs = { field: fid, meta: V.obsMeta, list: o.observations };
+  } catch (e) { if (V) V.obs = { field: fid, meta: null, list: [] }; }
+  if (V) renderStatus();
+}
+async function submitObservation(ev) {
+  ev.preventDefault();
+  const fd = new FormData(ev.currentTarget), fid = state.selectedField;
+  const items = {};
+  for (const k of Object.keys(V.obsMeta.items)) items[k] = fd.get(k);
+  const btn = ev.currentTarget.querySelector('button[type=submit]'); btn.disabled = true;
+  try {
+    await api('/api/observations', { method: 'POST', body: { field_id: fid, time: state.time, observer: fd.get('observer'), notes: fd.get('notes'), items } });
+    toast('Observation recorded. It can add caution; it never clears a measured flag.');
+    V.obs = null;
+    await refreshAll();
+  } catch (e) { toast(e.message, true); btn.disabled = false; }
 }
 async function loadLive() {
   const fid = state.selectedField;
@@ -220,7 +246,7 @@ function renderHud() {
   const w = (r) => (r && r.wind_mph != null ? `${r.wind_mph.toFixed(1)}<small>mph ${compass(r.dir_from_deg)}</small>` : '—');
   const wCls = (r) => (r && r.wind_mph != null ? (r.wind_mph < 3 || r.wind_mph > 10 ? 'warn' : 'ok') : '');
   V.root.querySelector('#hud').innerHTML = `
-    <div class="cell status-cell">${chip(a.status, 'lg')}<div><div class="k">Selected</div><div class="small" style="font-weight:600">${esc(fp.name)}</div></div></div>
+    <div class="cell status-cell">${chip(a.status, 'lg')}<div><div class="k">Selected</div><div class="small" style="font-weight:600">${esc(fp.name)}</div><div class="xs muted" title="Versioned decision ID">${esc(a.decision_id || '')}</div></div></div>
     <div class="cell"><div class="k">${esc(hudPair(rd))}</div><div class="v ${dCls}">${dT != null ? (dT > 0 ? '+' : '') + dT.toFixed(1) : '—'}<small>°F</small></div></div>
     <div class="cell"><div class="k">Wind ${esc(hh(rd?.lower, true))}</div><div class="v ${wCls(rd?.lower)}">${w(rd?.lower)}</div></div>
     ${rd?.upper?.wind_installed === false ? '' : `<div class="cell"><div class="k">Wind ${esc(hh(rd?.upper, true))}</div><div class="v">${w(rd?.upper)}</div></div>`}

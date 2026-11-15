@@ -824,3 +824,32 @@ body.hide-demo .sim-badge, body.hide-demo .sim-fab:not([aria-expanded="true"]) {
 
 .section-title { flex-wrap: wrap; }
 @media (max-width: 820px) { .section-title .btn { white-space: normal; text-align: left; } }
+
+/* ---- v6: decisions, trend, observations, surface checks ---- */
+.dec-id{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text-2);padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--raise)}
+.dec-id code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.75rem;color:var(--text)}
+.trend{margin-top:12px;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--raise)}
+.trend.warn{border-color:color-mix(in srgb,var(--caution) 55%,transparent)}
+.trend .k{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-2);margin-bottom:2px}
+.trend p{margin:4px 0 0}
+.obs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:10px}
+.obs-grid .field{margin:0}
+.obs-grid select,.obs-grid input{width:100%;min-height:36px}
+.obs-list{list-style:none;margin:10px 0 0;padding:0;font-size:.8rem}
+.obs-list li{padding:6px 0;border-top:1px solid var(--line)}
+.surface{margin-top:10px}
+.surface .k{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-2);margin-bottom:4px}
+.prechecks{margin-top:8px}
+.prechecks summary{cursor:pointer;font-size:.85rem;font-weight:600;min-height:32px;display:flex;align-items:center}
+.prechecks ol{margin:4px 0 0;padding-left:1.2em}
+.prechecks li{margin:4px 0}
+.sc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.sc-card{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--raise)}
+.sf-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.sf{padding:8px 10px;border-radius:8px;border:1px solid var(--line);border-left-width:3px}
+.sf.checked{border-left-color:var(--go,#5BE3A5)}
+.sf.noted{border-left-color:var(--caution)}
+.sf.unknown{border-left-color:var(--text-3)}
+.sf-h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.sf-v{font-size:.72rem;font-weight:600;color:var(--text-2);white-space:nowrap}
+.sf .small{margin-top:2px}

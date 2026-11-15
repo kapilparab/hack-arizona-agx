@@ -194,12 +194,52 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
 - **Proposed vs. accepted plan:** "Accept this plan" records who accepted it, and the Schedule page shows when the proposal has changed since acceptance.
 - **Compare other equipment:** the rig options sit in a collapsed section under the recommendation.
 
+### "Whether the Weather?" additions — Implemented (`app/engine.py`, `app/store.py`, `app/scheduler.py`)
+- **One versioned decision.** Every assessment has a deterministic `decision_id` (a hash of the reading, time, field, product, thresholds, observations and rule version `cg-rules-0.4.0`).
+  - The same ID appears in the status panel, the map HUD, the explanation, the monitoring result and the snapshot record.
+  - Each scheduled job carries the decision ID at its planned start, matching what the status panel shows for that time. Both are covered by tests.
+- **Persistence (prototype rules, editable thresholds).**
+  - One clean reading after an inversion gives Caution, not Go. An inversion is treated as cleared only after 2 consecutive readings without it, and the scheduler applies the same rule to windows.
+  - An active alert clears only after 2 consecutive non-critical monitoring checks. Any critical check resets the count, and new escalations are immediate.
+  - Sunrise or an improved forecast never clears a measured inversion.
+- **Developing or dissipating.**
+  - Successive paired readings over 60 min are classified as strengthening, weakening, developing, mixing or uncertain. A change within the combined sensor uncertainty is "uncertain".
+  - The lower-height wind trend is reported alongside.
+  - A weakening trend does not clear the warning.
+- **Field observations.**
+  - Observers can record dust hanging, smoke layering, fog, dew, frost, cloud cover and local wind variability, plus observer, location, time and notes.
+  - Every item starts as *not checked*.
+  - Signs of stable air add a non-blocking Caution for 60 min. "No" or "not checked" never clears a flag.
+  - Each observation is written to Records.
+- **Height references.** The status panel lists every level's height above its installed reference, above ground, and above sea level (from the 3DEP field-mean elevation).
+  - Levels shown: sensors, release height and canopy top.
+  - It states that observed coverage is only between the installed sensors.
+- **Rain and surface concerns, separate from drift.** Each scheduled job lists five concerns: airborne drift (checked every slot), rainfastness (product rain-free interval), runoff, dew or leaf wetness, and rain or irrigation for activation. Unknown product information stays *Unknown*.
+- **Pre-application checks.** Each scheduled job has five checks:
+  - fresh paired readings within 20 min;
+  - wind direction toward sensitive areas;
+  - an optional field observation;
+  - re-reading the label;
+  - re-checking the forecast.
+- **Nozzles.** The TeeJet TTI table (product page, Catalog 52, saved with provenance in `app/data/teejet_tti.json`) joins XR and AIXR.
+  - Prototype ranking: fully documented first, then no failed checks, then the least extra coarseness above the requirement (coarser is not assumed better), then pressure margin.
+  - Release height is checked against TeeJet's documented 20 in for 110° tips at 20 in spacing.
+
+### Final checklist
+
+| State | Items |
+|---|---|
+| **Implemented and tested** (62 automated tests plus a desktop and mobile browser check) | Paired-height inversion check with combined uncertainty; Go / Caution / Stop / Insufficient data, with stale or missing data never Go; 3–10 mph wind window; circular direction differences; speed and direction shear; neighbor attention checks; installed-height metadata and reference surfaces; versioned decision ID shared across screens; inversion persistence; alert-clearance persistence; trend classification; field observations (caution only); scheduler over all job orders with travel, setup, refills, shift, deadline, rain-free interval and persistence; rain and surface concerns kept separate; pre-application checks; nozzle sizing from TeeJet XR, AIXR and TTI tables; drone kept distinct from TeeJet nozzles; release-height interpolation (PCHIP, no extrapolation) and FAO-56 wind estimate; spray-plane ΔT; 3DEP terrain stats, profile and 3D relief; CSV records; EN/ES explanations |
+| **Simulated** (labeled in the interface) | Sensor masts S1 and S2 and every local reading; the rain-probability forecast; fields, growers, neighbors and jobs; the demo products and their constraints; equipment costs; critical-change injection |
+| **Awaiting data** | Real paired-height sensor feed; product label values (wind, temperature, rain-free, runoff, leaf wetness, activation, droplet class); manufacturer sensor accuracy and averaging; rainfall amount and intensity; leaf-wetness sensor; operator-verified sensor installation heights |
+| **Experimental** (real data, not validated for decisions) | HRRR plus AZMET fusion with IDW residual correction (leave-one-out MAE 0.98 °F vs nearest station 0.89 °F, n = 33); HRRR native-level profile analysis; NWS hourly |
+| **Deferred** | Kriging; PWM modelling; airblast airflow modelling; NBM, GOES, satellite and soil products; Synoptic/MesoWest and IEM; seeding from the lettuce report (attachment not available) |
+
 ### Deferred
 - Geostatistical kriging (three stations cannot support a variogram).
 - NBM, GOES, CDL, NLCD, Sentinel-2, Landsat, SMAP, SSURGO, ERA5, IGRA, CASES-99, BLLAST and MATERHORN.
 - Synoptic/MesoWest and IEM.
 - PWM modelling.
-- A TTI droplet table (not in the loaded guide).
 - Airblast airflow modelling.
 - Seeding products from the lettuce report: that attachment was not available in this session.
 
@@ -208,9 +248,9 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
 1. **(0:00) Today.** "Four requests came in from the PCA and the spray program. Broccoli Field B must be done by 10:00." Point to the next proposed job (Field B, 06:15) and the line saying the request order would leave B unscheduled.
 2. **(0:30) Blind spot.** Under *Fields needing attention*, Field A shows Stop with "A 5 ft station alone would say Go." Click **Open map**, select Field A. The right panel shows *5 ft station only: Go* vs *Paired 5 ft + 30 ft: Stop*. The cross-section shows 30 ft is +3.9 °F warmer: an inversion lid.
 3. **(1:00) Neighbors and wind.** Wind arrows point where air moves *to*. Air is moving south toward the fictional organic block (N1), which has a user-entered hold constraint. Show the Neighbors explanation, and note it is an attention check, not an exposure prediction.
-4. **(1:30) Equipment.** In Setup, switch to **Agricultural spray drone**. A blocking conflict appears: the product's ASABE Medium-or-coarser requirement can't be verified from a µm atomizer setting. Switch back to the boom; the weather Stop is still there because equipment can't clear an inversion. Open *Compare nozzles*: no recommendation, because verified droplet charts aren't loaded.
+4. **(1:30) Equipment.** In Setup, switch to **Agricultural spray drone**. A blocking conflict appears: the product's ASABE Medium-or-coarser requirement can't be verified from a µm atomizer setting. Switch back to the boom; the weather Stop is still there because equipment can't clear an inversion. Open *Compare nozzles*: candidates come from the TeeJet XR, AIXR and TTI tables with their sources, ranked by the stated prototype rule.
 5. **(2:00) Reorder.** Open **Schedule**. Request order A → B → C leaves B unscheduled. Proposed B → A → C runs B at 06:15, then A after its inversion breaks (08:45–09:40), and C moves to tomorrow. Its blue bar is the 4 h rain-free interval that would overlap the simulated 15:00 showers today. Click **Why this order?** and toggle **ES**.
-6. **(2:30) Monitoring and record.** On the map with Field A, open **Prototype controls → Simulation**, press **Play**, then **Simulate critical change**. The vehicle pauses, the active pass turns red, and one grouped alert appears. Enter a name and **Acknowledge**. Open **Records**: the alert, acknowledgement, schedule revisions, rule version and *Simulated* flag are there. **Export CSV**.
+6. **(2:30) Monitoring and record.** On the map with Field A, open **Prototype controls → Simulation**, press **Play**, then **Simulate critical change**. The vehicle pauses, the active pass turns red, and one grouped alert appears. Enter a name and **Acknowledge**. After conditions improve, the alert stays active for one clean check and clears on the second. Record a field observation (e.g. dust hanging) in the status panel: it adds Caution and never clears a flag. Open **Schedule → Before each planned job** for the decision ID, rain and surface concerns, and pre-application checks. Open **Records**: the alert, acknowledgement, schedule revisions, rule version and *Simulated* flag are there. **Export CSV**.
 
 ## Sources and assumptions
 

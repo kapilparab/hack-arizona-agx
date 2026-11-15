@@ -135,7 +135,7 @@ def evaluate(field: dict, unit_id: str, cfg_override: dict | None, product: dict
     else:
         # Ground boom / airblast: documented class at the configured tip and pressure first,
         # operator-entered class only as a labeled fallback.
-        fam = {"teejet_xr": "XR", "teejet_aixr": "AIXR"}.get(cfg.get("nozzle_id"))
+        fam = {"teejet_xr": "XR", "teejet_aixr": "AIXR", "teejet_tti": "TTI"}.get(cfg.get("nozzle_id"))
         doc_cls, doc_src = (nozzles._doc_class(fam, str(cfg.get("orifice_size")), float(cfg.get("pressure_psi") or 0))
                             if fam and utype == "ground_boom" else (None, "No documented table for this nozzle in the loaded source"))
         ent = doc_cls or cfg.get("droplet_class_entered")
@@ -182,7 +182,7 @@ def evaluate(field: dict, unit_id: str, cfg_override: dict | None, product: dict
     }
     nozzle_eval = None
     if utype == "ground_boom":
-        fam = {"teejet_xr": "XR", "teejet_aixr": "AIXR"}.get(cfg.get("nozzle_id"))
+        fam = {"teejet_xr": "XR", "teejet_aixr": "AIXR", "teejet_tti": "TTI"}.get(cfg.get("nozzle_id"))
         nozzle_eval = nozzles.evaluate(cfg.get("rate_gpa"), cfg.get("speed_mph"), cfg.get("nozzle_spacing_in"),
                                        min_class=req, pump_min_psi=cfg.get("pump_min_psi"), pump_max_psi=cfg.get("pump_max_psi"),
                                        release_height_in=cfg.get("boom_height_in"),

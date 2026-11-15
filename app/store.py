@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS records (
   id INTEGER PRIMARY KEY AUTOINCREMENT, recorded_at TEXT NOT NULL, scenario_time TEXT,
   kind TEXT NOT NULL, field_id TEXT, job_id TEXT, status TEXT, summary TEXT,
   rule_version TEXT, simulated INTEGER, payload TEXT);
+CREATE TABLE IF NOT EXISTS observations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, field_id TEXT, observer TEXT, lat REAL, lon REAL,
+  recorded_at TEXT, scenario_time TEXT, items TEXT, notes TEXT);
 CREATE TABLE IF NOT EXISTS alerts (
   id INTEGER PRIMARY KEY AUTOINCREMENT, field_id TEXT, job_id TEXT, rule TEXT, severity TEXT,
   message TEXT, first_seen TEXT, last_seen TEXT, occurrences INTEGER, active INTEGER,
@@ -44,6 +47,10 @@ def db():
         if _db is None:
             _db = _conn()
             _db.executescript(SCHEMA)
+            try:
+                _db.execute("ALTER TABLE alerts ADD COLUMN clear_streak INTEGER DEFAULT 0")
+            except sqlite3.OperationalError:
+                pass
     return _db
 
 
@@ -190,15 +197,26 @@ def raise_alert(field_id, job_id, rule, severity, message, scenario_time):
         return dict(c.execute("SELECT * FROM alerts WHERE id=?", (cur.lastrowid,)).fetchone()), True
 
 
-def clear_alerts(field_id, active_rules):
+def clear_alerts(field_id, active_rules, needed=2):
+    """Persistence rule: an active alert clears only after `needed` consecutive non-critical checks.
+    Any critical check resets the streak. (Escalation of new conditions is immediate and separate.)"""
     with _lock:
         c = db()
-        rows = c.execute("SELECT id, rule FROM alerts WHERE field_id=? AND active=1", (field_id,)).fetchall()
-        cleared = [r["id"] for r in rows if r["rule"] not in active_rules]
-        for i in cleared:
-            c.execute("UPDATE alerts SET active=0 WHERE id=?", (i,))
+        rows = c.execute("SELECT id, rule, COALESCE(clear_streak, 0) AS st FROM alerts WHERE field_id=? AND active=1", (field_id,)).fetchall()
+        cleared, pending = [], []
+        for r in rows:
+            if r["rule"] in active_rules:
+                c.execute("UPDATE alerts SET clear_streak=0 WHERE id=?", (r["id"],))
+                continue
+            st = r["st"] + 1
+            if st >= needed:
+                c.execute("UPDATE alerts SET active=0, clear_streak=? WHERE id=?", (st, r["id"]))
+                cleared.append(r["id"])
+            else:
+                c.execute("UPDATE alerts SET clear_streak=? WHERE id=?", (st, r["id"]))
+                pending.append({"id": r["id"], "clear_streak": st, "needed": needed})
         c.commit()
-        return cleared
+        return {"cleared": cleared, "pending": pending}
 
 
 def list_alerts(active_only=False):
@@ -219,3 +237,27 @@ def reset_alerts():
     with _lock:
         db().execute("DELETE FROM alerts")
         db().commit()
+
+
+
+# ---------------------------------------------------------- observations
+def add_observation(o):
+    with _lock:
+        cur = db().execute("INSERT INTO observations (field_id, observer, lat, lon, recorded_at, scenario_time, items, notes) VALUES (?,?,?,?,?,?,?,?)",
+                           (o["field_id"], o.get("observer"), o.get("lat"), o.get("lon"), now_iso(), o.get("scenario_time"),
+                            json.dumps(o.get("items", {})), o.get("notes")))
+        db().commit()
+        return cur.lastrowid
+
+
+def list_observations(field_id=None):
+    q = "SELECT * FROM observations" + (" WHERE field_id=?" if field_id else "") + " ORDER BY id DESC"
+    out = []
+    for r in _all(q, (field_id,) if field_id else ()):
+        d = dict(r); d["items"] = json.loads(d["items"] or "{}"); out.append(d)
+    return out
+
+
+def reset_observations():
+    with _lock:
+        db().execute("DELETE FROM observations"); db().commit()

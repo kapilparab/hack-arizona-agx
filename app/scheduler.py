@@ -12,7 +12,7 @@ from app.geo import centroid
 
 PRIORITY_W = {"high": 4, "medium": 2, "normal": 1, "low": 0.5}
 NO_WINDOW = "No suitable window found before the requested deadline - review with your PCA."
-WEATHER_IDS = {"inversion", "speed_shear", "dir_shear"}
+WEATHER_IDS = {"inversion", "speed_shear", "dir_shear", "inversion_persistence"}
 CAUSE_LABEL = {
     "inversion": "temperature inversion", "wind_low": "wind below minimum", "wind_high": "wind above maximum",
     "product_wind": "product wind limit", "data": "missing or insufficient sensor data", "speed_shear": "wind-speed change with height",
@@ -31,7 +31,8 @@ def slot_status(scn, field, product, areas, t, overrides=None):
     """Return (suitable, cause_id, assessment) for the slot starting at t."""
     sid = field["sensor_id"]
     rd = scn.reading(sid, t) if sid else None
-    a = engine.assess(rd, t, field, areas, product, overrides)
+    prev = scn.reading(sid, t - timedelta(minutes=SLOT_MIN)) if sid else None
+    a = engine.assess(rd, t, field, areas, product, overrides, prev_reading=prev)
     for c in a["checks"]:
         if c["status"] in (engine.STOP, engine.INSUFFICIENT):
             return False, ("neighbor" if c["id"].startswith("neighbor_") else c["id"]), a
@@ -49,6 +50,7 @@ class Context:
         self.overrides = overrides or {}
         self.t = _thr(overrides)
         self._suit = {}
+        self._dec = {}  # decision ID of each assessed slot (same ID the map/status/records show for that time)
         self.evals = {}
         for j in jobs:
             f = demo_data.field(j["field_id"])
@@ -62,6 +64,7 @@ class Context:
         if key not in self._suit:
             ok, cause, a = slot_status(self.scn, field, catalog.PRODUCTS.get(product_id), self.areas, t, self.overrides)
             self._suit[key] = (ok, cause, a["status"])
+            self._dec[key] = a["decision_id"]
         return self._suit[key]
 
     def rain_ok(self, end: datetime, hours):
@@ -184,6 +187,9 @@ def simulate(ctx: Context, order):
                         "wait_min": int((w["start"] - ready).total_seconds() // 60),
                         "rain_ok": w["rain_ok"], "rain_note": w["rain_note"],
                         "rejected_causes": {CAUSE_LABEL.get(k, k): v for k, v in w["causes"].items()}})
+        results[-1]["surface"] = surface_checks(job, results[-1])
+        results[-1]["pre_checks"] = PRE_CHECKS
+        results[-1]["start_decision_id"] = ctx._dec.get((f["id"], job.get("product_id"), w["start"]))
         st.update(free=w["end"], xy=fxy, loc=f["name"])
     return results
 
@@ -379,3 +385,35 @@ def _savings(best, options):
                     "note": None if (o["compatible"] and o["scheduled"]) else
                             ("Reference only: this unit is currently blocked - " + (o["blocking"][0] if o["blocking"] else "no window") )})
     return out
+
+
+
+PRE_CHECKS = [
+    "Take fresh paired-height readings at the field (both heights, same mast) within 20 min of starting; the window is a simulated, conditional estimate.",
+    "Confirm wind direction relative to every marked sensitive area at both installed heights.",
+    "Optional field observation: dust hanging, smoke layering, fog/dew/frost, cloud, local wind variability. Absence of signs does not establish safe conditions.",
+    "Re-read the product label for wind, temperature, rain-free, buffer and activation instructions; demo constraints are not label values.",
+    "Re-check the forecast for rain timing and probability; forecast improvement does not clear a measured inversion.",
+]
+
+
+def surface_checks(job, r):
+    """Five separate rain/surface concerns; unknown product information stays explicit."""
+    prod = catalog.PRODUCTS.get(job.get("product_id")) or {}
+    c = prod.get("constraints", {})
+    rf = c.get("rainfast_h", {"value": None, "source": "Not entered"})
+    act = c.get("activation", {"value": None, "source": "Not entered"})
+    run = c.get("runoff", {"value": None, "source": "Not entered"})
+    lw = c.get("leaf_wetness", {"value": None, "source": "Not entered"})
+    return [
+        {"id": "drift", "label": "Airborne drift", "status": "checked",
+         "text": "Paired-height inversion, wind window, shear and sensitive-area checks were applied to every 15-min slot of the job."},
+        {"id": "rainfast", "label": "Rainfastness / effectiveness", "status": "checked" if rf["value"] is not None else "unknown",
+         "text": (r.get("rain_note") or "") if rf["value"] is not None else "Rain-free interval not entered for this product - not checked.", "source": rf["source"]},
+        {"id": "runoff", "label": "Runoff", "status": "checked" if run["value"] else "unknown",
+         "text": run["value"] or "No product runoff instruction entered, and the simulated forecast has probability only (no rainfall amount or intensity).", "source": run["source"]},
+        {"id": "wetness", "label": "Dew / leaf wetness", "status": "checked" if lw["value"] else "unknown",
+         "text": lw["value"] or "No leaf-wetness requirement entered. Dew can be recorded as a field observation; no leaf-wetness sensor is in the demo.", "source": lw["source"]},
+        {"id": "activation", "label": "Rain or irrigation for activation", "status": "noted" if act["value"] else "unknown",
+         "text": act["value"] or "Not entered for this product.", "source": act["source"]},
+    ]

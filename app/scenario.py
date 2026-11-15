@@ -145,17 +145,24 @@ class Scenario:
 
     def trend(self, sensor_id, t, minutes=60):
         """Upper-minus-lower temperature trend (°F per hour) from 3+ aligned simulated pairs."""
-        pts = []
+        pts, wpts = [], []
         for k in range(0, minutes + 1, 15):
             r = self.reading(sensor_id, t - timedelta(minutes=k))
             if r and r["lower"]["temp_f"] is not None and r["upper"]["temp_f"] is not None:
                 pts.append((k, r["upper"]["temp_f"] - r["lower"]["temp_f"]))
+            if r and r["lower"].get("wind_mph") is not None:
+                wpts.append((k, r["lower"]["wind_mph"]))
         if len(pts) < 3:
             return None
         n = len(pts); mx = sum(p[0] for p in pts) / n; my = sum(p[1] for p in pts) / n
         sxx = sum((p[0] - mx) ** 2 for p in pts)
         slope_per_min = -sum((p[0] - mx) * (p[1] - my) for p in pts) / sxx  # k counts minutes back in time
-        return {"per_hour_f": round(slope_per_min * 60, 2), "points": n, "window_min": minutes}
+        wslope = None
+        if len(wpts) >= 3:
+            wx = sum(p[0] for p in wpts) / len(wpts); wy = sum(p[1] for p in wpts) / len(wpts)
+            wslope = -sum((p[0] - wx) * (p[1] - wy) for p in wpts) / sum((p[0] - wx) ** 2 for p in wpts) * 60
+        return {"per_hour_f": round(slope_per_min * 60, 2), "points": n, "window_min": minutes,
+                "wind_per_hour_mph": None if wslope is None else round(wslope, 2)}
 
     def rain_prob(self, t: datetime) -> float | None:
         if not (self.day0 <= t < self.end):

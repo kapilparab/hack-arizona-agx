@@ -124,6 +124,8 @@ PRODUCTS = {
             "min_droplet_class": {"value": "C", "source": DEMO},
             "rainfast_h": {"value": 6.0, "source": DEMO},
             "temp_range_f": {"value": [40, 85], "source": DEMO},
+            "activation": {"value": "Needs rainfall or sprinkler irrigation after application to activate (demo assumption); not scheduled by Observair.", "source": DEMO},
+            "runoff": {"value": None, "source": "Not entered"}, "leaf_wetness": {"value": None, "source": "Not entered"},
             "methods": {"value": ["ground_boom"], "source": DEMO},
             "buffers": {"value": [{"kind": "waterway", "ft": 100}], "source": DEMO},
         },

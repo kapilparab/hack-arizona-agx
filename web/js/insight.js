@@ -33,6 +33,77 @@ export function releaseSection(a) {
     <p class="value-basis">${esc(r.note)} Wind method: FAO-56 logarithmic profile (d = ⅔h, z₀ = 0.123h).</p></div>`;
 }
 
+// ------------------------------------------------------- versioned decision
+export const decisionTag = (id, rule) => (id ? `<span class="dec-id" title="One versioned decision: the same ID appears on the map, status, schedule, explanation and record">${icon('info', 'sm')}Decision <code>${esc(id)}</code>${rule ? ` · ${esc(rule)}` : ''}</span>` : '');
+
+// ------------------------------------------------- developing / dissipating
+const TREND_LABEL = { strengthening: 'Inversion strengthening', weakening: 'Inversion weakening', developing: 'Inversion may be developing',
+  mixing: 'Mixing increasing', uncertain: 'No clear trend' };
+export function trendSection(a) {
+  const tc = a.metrics?.trend_class;
+  if (!tc) return '';
+  const warn = tc.class === 'strengthening' || tc.class === 'developing';
+  const persist = a.checks.find((c) => c.id === 'inversion_persistence');
+  return `<div class="trend ${warn ? 'warn' : ''}"><div class="k">Trend over successive paired readings</div>
+    <b>${esc(TREND_LABEL[tc.class] || tc.class)}</b><p class="small">${esc(tc.text)}</p>
+    ${persist ? `<p class="small" style="color:var(--caution)">${esc(persist.reason)}</p>` : ''}
+    <p class="xs muted">Rules (prototype): an inversion clears only after 2 consecutive readings without it; an active alert clears only after 2 consecutive clean checks; sunrise or a better forecast never clears a measured inversion.</p></div>`;
+}
+
+// ------------------------------------------------- vertical height references
+export function heightRefs(a, fp, releaseFt) {
+  const rd = a.reading;
+  if (!rd) return '';
+  const can = fp.canopy_ft ?? 0, terr = a.field_terrain?.status === 'ok' ? a.field_terrain.mean_m * 3.2808 : null;
+  const agl = (h, ref) => (h == null ? null : ref === 'canopy' ? h + can : h);
+  const rows = [
+    ['Upper temperature sensor', rd.upper.height_ft, rd.upper.ref, agl(rd.upper.height_ft, rd.upper.ref), 'Observed (simulated)'],
+    ['Lower temperature sensor', rd.lower.height_ft, rd.lower.ref, agl(rd.lower.height_ft, rd.lower.ref), 'Observed (simulated)'],
+    ...(rd.lower.wind_installed ? [['Wind sensor', rd.lower.wind_height_ft, rd.lower.wind_ref, agl(rd.lower.wind_height_ft, rd.lower.wind_ref), 'Observed (simulated)']] : []),
+    ['Release height (spray plan)', releaseFt, 'ground', releaseFt, 'Plan input'],
+    ['Crop canopy top', can, 'ground', can, 'Field record'],
+  ].filter((r) => r[1] != null).sort((x, y) => y[3] - x[3]);
+  const lo = agl(rd.lower.height_ft, rd.lower.ref), hi = agl(rd.upper.height_ft, rd.upper.ref);
+  return `<div class="side-sec"><h3>Height references</h3>
+    <div class="table-wrap"><table class="data"><thead><tr><th>Level</th><th>Above ground</th><th>Above sea level</th></tr></thead><tbody>
+    ${rows.map(([n, h, ref, g, kind]) => `<tr><td>${esc(n)}<div class="xs muted">${ref === 'ground' ? '' : `${hft(h)} above ${esc(ref)} · `}${esc(kind)}</div></td><td>${hft(g)}</td>
+      <td>${terr != null ? Math.round(terr + g) + ' ft' : '—'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="value-basis">Ground elevation ${terr != null ? `${Math.round(terr)} ft (${a.field_terrain.mean_m} m NAVD88, USGS 3DEP field mean)` : 'not loaded'}. Observed coverage is only between ${hft(lo)} and ${hft(hi)} above ground; nothing above or below the installed sensors is extrapolated.</p></div>`;
+}
+
+// ----------------------------------------------------- field observations
+const OBS_LABEL = { dust_suspended: 'Dust hanging in the air', smoke_layer: 'Smoke layering', fog: 'Fog', dew: 'Dew', frost: 'Frost',
+  cloud_cover: 'Cloud cover', wind_variability: 'Local wind' };
+export function observationsSection(meta, list) {
+  if (!meta) return `<div class="side-sec"><h3>Field observations</h3><div class="skeleton" style="height:60px"></div></div>`;
+  const val = (v) => v.replace('_', ' ');
+  return `<div class="side-sec"><div class="sec-title"><h2>Field observations</h2><span class="xs muted">supporting evidence</span></div>
+    <form class="obs-form" data-obs-form>
+      <div class="obs-grid">${Object.entries(meta.items).map(([k, opts]) => `<div class="field"><label for="obs-${k}">${esc(OBS_LABEL[k] || k)}</label>
+        <select id="obs-${k}" name="${k}">${opts.slice().sort((x, y) => (x === 'not_checked' ? -1 : y === 'not_checked' ? 1 : 0)).map((o) => `<option value="${o}">${esc(val(o))}</option>`).join('')}</select></div>`).join('')}</div>
+      <div class="obs-grid"><div class="field"><label for="obs-observer">Observer</label><input id="obs-observer" name="observer" type="text" placeholder="Name or role" autocomplete="name"></div>
+        <div class="field"><label for="obs-notes">Notes</label><input id="obs-notes" name="notes" type="text" placeholder="Optional"></div></div>
+      <button class="btn sm primary" type="submit">Record observation</button>
+    </form>
+    <p class="xs muted" style="margin-top:8px">${esc(meta.rules)} Everything starts as "not checked".</p>
+    ${list?.length ? `<ul class="obs-list">${list.slice(0, 4).map((o) => `<li><b>${esc(o.scenario_time?.slice(11, 16) || '')}</b> ${esc(o.observer || 'Unnamed observer')}:
+      ${esc(Object.entries(o.items).filter(([, v]) => v !== 'not_checked').map(([k, v]) => `${(OBS_LABEL[k] || k).toLowerCase()} ${val(v)}`).join(', ') || 'nothing checked')}</li>`).join('')}</ul>` : ''}</div>`;
+}
+
+// ------------------------------------------------- rain & surface concerns
+export function surfaceSection(r) {
+  if (!r?.surface) return '';
+  const lab = { checked: 'Checked', noted: 'Noted', unknown: 'Unknown' };
+  return `<div class="surface"><div class="k">Rain and surface concerns (checked separately)</div>
+    <ul class="sf-list">${r.surface.map((s) => `<li class="sf ${esc(s.status)}"><div class="sf-h"><b>${esc(s.label)}</b><span class="sf-v">${lab[s.status] || esc(s.status)}</span></div>
+      <div class="small">${esc(s.text)}</div>${s.source ? `<div class="xs muted">${esc(s.source)}</div>` : ''}</li>`).join('')}</ul></div>`;
+}
+export function preChecks(r) {
+  if (!r?.pre_checks) return '';
+  return `<details class="prechecks"><summary>Before starting: ${r.pre_checks.length} checks</summary>
+    <ol class="small">${r.pre_checks.map((c) => `<li>${esc(c)}</li>`).join('')}</ol></details>`;
+}
+
 // ------------------------------------------------------------ data support
 export function dataSupport(a, live) {
   const rd = a.reading, m = a.metrics, pv = a.provenance;

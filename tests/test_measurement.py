@@ -76,8 +76,23 @@ def test_nozzle_formula_and_documented_operating_point():
 
 
 def test_nozzle_no_candidate_when_requirement_unmet():
-    r = nozzles.evaluate(15, 8, 20, min_class="VC", pump_min_psi=15, pump_max_psi=75, release_height_in=20)
+    # 60 GPA at 15 mph needs ~3 GPM per nozzle: beyond every documented tip's table
+    r = nozzles.evaluate(60, 15, 20, min_class="M", pump_min_psi=15, pump_max_psi=75, release_height_in=20)
     assert r["status"] == "none" and r["recommended"] is None
+
+
+def test_ranking_prefers_least_excess_coarseness_not_coarsest():
+    r = nozzles.evaluate(15, 8, 20, min_class="M", pump_min_psi=15, pump_max_psi=75, release_height_in=20)
+    assert r["recommended"] == "AIXR11004"          # C (1 class above M) beats TTI11004 XC
+    tti = next(c for c in r["candidates"] if c["model"] == "TTI11004")
+    assert tti["droplet_class"] == "XC" and tti["fully_documented"]
+
+
+def test_tti_table_and_release_height_check():
+    r = nozzles.evaluate(15, 8, 20, min_class="VC", pump_min_psi=15, pump_max_psi=75, release_height_in=30)
+    best = next(c for c in r["candidates"] if c["id"] == r["recommended"]) if r["recommended"] else r["candidates"][0]
+    hcheck = next(k for k in best["checks"] if k["label"].startswith("Release height"))
+    assert hcheck["ok"] is False                     # 30 in vs documented 20 in at 20 in spacing
 
 
 def test_nozzle_missing_essential_inputs_blocks():

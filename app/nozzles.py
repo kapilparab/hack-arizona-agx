@@ -9,7 +9,9 @@ Source: TeeJet Technologies, "A User's Guide to Spray Technology" (li-tj416),
 Supporting text: Purdue PPP-153 (nozzle colour code is separate from droplet-class
   colours; operating near range limits degrades pattern; XR produces more fines than
   AIXR at the same capacity)."""
+import json
 import math
+import os
 from app.catalog import ASABE_CLASSES, ASABE_NAMES
 
 TJ = "TeeJet li-tj416 User's Guide to Spray Technology"
@@ -28,6 +30,13 @@ for size, cls in zip(["01", "015", "02", "025", "03", "04", "05", "06", "08", "1
     DOC[("XR", size)] = {30: (cls, None, 76)}
 for size, cls in zip(["015", "02", "025", "03", "04", "05", "06", "08", "10"], ["M", "M", "M", "M", "C", "C", "C", "VC", "VC"]):
     DOC[("AIXR", size)] = {60: (cls, None, 76)}
+# TTI: full droplet/capacity table from the TeeJet TTI product page (Catalog 52), saved with provenance.
+_TTI = json.load(open(os.path.join(os.path.dirname(__file__), "data", "teejet_tti.json"), encoding="utf-8"))
+TTI_SRC = f"{_TTI['source']} (retrieved {_TTI['retrieved']})"
+for size, rows in _TTI["sizes"].items():
+    DOC[("TTI", size)] = {int(psi): (r["class"], r["gpm"], "TTI table") for psi, r in rows.items()}
+# Documented spray height for 110 degree tips at 20 in spacing (TTI product page performance table)
+SPRAY_HEIGHT_110_AT_20IN = {"height_in": 20, "source": "TeeJet TTI product page: 110° at 20 in spacing, spray height 20 in", "url": _TTI["url"]}
 # Full pressure table for AIXR11004 (p.94)
 DOC[("AIXR", "04")] = {15: ("XC", 0.24, 94), 20: ("VC", 0.28, 94), 30: ("VC", 0.35, 94), 40: ("C", 0.40, 94),
                        50: ("C", 0.45, 94), 60: ("C", 0.49, 94), 75: ("M", 0.55, 94), 90: ("M", 0.60, 94)}
@@ -35,9 +44,15 @@ DOC[("AIXR", "04")] = {15: ("XC", 0.24, 94), 20: ("VC", 0.28, 94), 30: ("VC", 0.
 FAMILIES = {
     "XR": {"model": "TeeJet XR110 (Extended Range flat fan)", "angle": 110, "pattern": "Tapered flat fan",
            "why": "Conventional flat fan: finer spectrum at a given size than air-induction tips (Purdue PPP-153), which can aid coverage but adds driftable fines."},
+    "TTI": {"model": "TeeJet TTI110 (Turbo TeeJet Induction)", "angle": 110, "pattern": "Wide-angle air-induction flat fan",
+            "why": "Air-induction tip with very coarse to ultra-coarse spectra across 15-100 psi (TeeJet TTI table); listed as PWM-approved. Coarsest is not automatically best: coverage can drop."},
     "AIXR": {"model": "TeeJet AIXR110 (Air Induction XR flat fan)", "angle": 110, "pattern": "Tapered flat fan, air-induction",
              "why": "Air induction produces fewer fine droplets than XR at the same capacity (Purdue PPP-153); coarser spectra can reduce coverage on small targets."},
 }
+
+
+def _src_label(page, detail):
+    return f"{TTI_SRC} ({detail})" if page == "TTI table" else f"{TJ} p.{page} ({detail})"
 
 
 def required_gpm(gpa, mph, spacing_in):
@@ -53,11 +68,11 @@ def _doc_class(family, size, psi):
     pts = sorted(rows)
     for p_ in pts:
         if abs(p_ - psi) < 0.5:
-            return rows[p_][0], f"{TJ} p.{rows[p_][2]} ({p_} psi row)"
+            return rows[p_][0], _src_label(rows[p_][2], f"{p_} psi row")
     below = [p_ for p_ in pts if p_ < psi]
     above = [p_ for p_ in pts if p_ > psi]
     if below and above and rows[below[-1]][0] == rows[above[0]][0]:
-        return rows[below[-1]][0], f"{TJ} p.{rows[below[-1]][2]} (between the {below[-1]} and {above[0]} psi rows, both {rows[below[-1]][0]})"
+        return rows[below[-1]][0], _src_label(rows[below[-1]][2], f"between the {below[-1]} and {above[0]} psi rows, both {rows[below[-1]][0]}")
     return None, (f"Droplet class at {psi:.0f} psi is not documented in the loaded source (documented: "
                   + ", ".join(f"{p_} psi {rows[p_][0]}" for p_ in pts) + ")")
 
@@ -70,7 +85,7 @@ def _doc_range(family, size):
 
 
 def evaluate(gpa, mph, spacing_in, *, min_class=None, pump_min_psi=None, pump_max_psi=None, release_height_in=None,
-             families=("AIXR", "XR"), configured=None):
+             families=("AIXR", "TTI", "XR"), configured=None, spacing_for_height=None):
     """Return candidate cards for every documented family/size. Ranking: fully documented
     operating point that meets the entered droplet requirement first, then smaller pressure-limit
     risk. Coarser is not assumed better."""
@@ -89,7 +104,8 @@ def evaluate(gpa, mph, spacing_in, *, min_class=None, pump_min_psi=None, pump_ma
             checks, missing = [], []
             if rng:
                 ok = rng[0] <= psi <= rng[1]
-                checks.append(("Pressure within documented table range", ok, f"{rng[0]}-{rng[1]} psi ({TJ} p.94)"))
+                checks.append(("Pressure within documented table range", ok,
+                               f"{rng[0]}-{rng[1]} psi ({TTI_SRC if fam == 'TTI' else TJ + ' p.94'})"))
             else:
                 missing.append("Documented operating-pressure range for this tip (not in the loaded source)")
                 ok = None
@@ -111,6 +127,12 @@ def evaluate(gpa, mph, spacing_in, *, min_class=None, pump_min_psi=None, pump_ma
             missing.append("PWM compatibility (not modelled)")
             if release_height_in is None:
                 missing.append("Boom release height")
+            elif spacing_in == 20 and FAMILIES[fam]["angle"] == 110:
+                h = SPRAY_HEIGHT_110_AT_20IN["height_in"]
+                checks.append((f"Release height {release_height_in} in vs documented {h} in for 110° tips at 20 in spacing",
+                               abs(release_height_in - h) <= 2, SPRAY_HEIGHT_110_AT_20IN["source"]))
+            else:
+                missing.append("Documented spray height for this angle and spacing")
             # expected flow at the proposed pressure: table value when documented at that row
             rows = DOC.get((fam, size), {})
             row = next((rows[p_] for p_ in rows if abs(p_ - psi) < 0.5 and rows[p_][1] is not None), None)
@@ -125,17 +147,22 @@ def evaluate(gpa, mph, spacing_in, *, min_class=None, pump_min_psi=None, pump_ma
                 "checks": [{"label": c[0], "ok": c[1], "source": c[2]} for c in checks],
                 "missing": missing, "failed": failed, "fully_documented": verified,
                 "family_fit": FAMILIES[fam]["why"],
-                "source": {"title": TJ, "url": TJ_URL, "pages": sorted({r[2] for r in rows.values()})},
+                "source": ({"title": TTI_SRC, "url": _TTI["url"], "pages": []} if fam == "TTI"
+                           else {"title": TJ, "url": TJ_URL, "pages": sorted({r[2] for r in rows.values()})}),
+                "excess_classes": (ASABE_CLASSES.index(cls) - ASABE_CLASSES.index(min_class)) if (cls and min_class) else None,
                 "selected": configured == f"{fam}110{size}",
             })
 
     def rank(c):
+        # Prototype ranking rule: fully documented first, then the candidate that meets the requirement
+        # with the least extra coarseness (coverage tradeoff, Purdue PPP-153), then pressure margin.
         risk = 0 if c["fully_documented"] else 1
+        excess = c["excess_classes"] if c["excess_classes"] is not None else 99
         margin = 0
         rng = _doc_range(c["family"], c["size_code"])
         if rng:
             margin = -min(c["proposed_psi"] - rng[0], rng[1] - c["proposed_psi"])   # prefer mid-range pressure
-        return (risk, len(c["failed"]), margin, c["proposed_psi"])
+        return (risk, len(c["failed"]), excess, margin, c["proposed_psi"])
 
     cands.sort(key=rank)
     best = cands[0] if cands and cands[0]["fully_documented"] else None
@@ -155,14 +182,17 @@ def evaluate(gpa, mph, spacing_in, *, min_class=None, pump_min_psi=None, pump_ma
         if larger:
             notes.append("Larger: " + why_not(min(larger, key=lambda x: SIZES[x["size_code"]])))
         c["alternatives"] = notes
-        c["rank_reason"] = ("Recommended: fully documented operating point that meets the entered requirement, with the most pressure margin."
+        c["rank_reason"] = ("Recommended: fully documented operating point that meets the requirement with the least extra coarseness "
+                            "(coverage tradeoff), then the most pressure margin. Prototype ranking rule."
                             if c is best else ("Candidate: documented checks pass but other candidates rank higher." if c["fully_documented"]
                                                else "Not recommended: " + ("; ".join(c["failed"] + c["missing"][:2]))))
     return {"status": "ok" if best else "none", "required_gpm": round(q, 3),
             "formula": "GPM per nozzle = GPA x MPH x spacing(in) / 5940 (conventional broadcast ground boom; US units)",
             "formula_source": f"{TJ} p.94", "recommended": best["id"] if best else None,
             "message": None if best else "No candidate has a fully documented operating point that meets the entered requirement.",
-            "candidates": cands[:8],
+            "candidates": cands[:9],
+            "ranking_rule": "Fully documented > no failed checks > least extra coarseness above the requirement > pressure margin (prototype rule; coarser is not assumed better).",
+            "application_volume": {"gpa": gpa, "coverage_requirement": "Not entered - product label coverage/volume guidance must be checked"},
             "notes": ["Nozzle size code is nominal flow at 40 psi; it is not a droplet size. Tip colour codes are separate from droplet-class colours (Purdue PPP-153).",
                       "A nozzle change cannot override an inversion or any other blocking weather condition.",
                       "No quantified drift reduction is claimed."]}

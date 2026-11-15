@@ -1,5 +1,6 @@
 import { state, api, chip, esc, icon, when, hm, dur, addMin, minutesBetween, fieldName, fieldProps, jobById, planFor, unitName,
   productName, stateBox, loadPlan, toast } from './core.js';
+import { surfaceSection, preChecks, decisionTag } from './insight.js';
 
 const PRI = ['high', 'medium', 'normal', 'low'];
 const PRI_L = { high: 'High', medium: 'Medium', normal: 'Normal', low: 'Low' };
@@ -52,6 +53,13 @@ export async function renderSchedule(root) {
           <span><i class="lg slot"></i>Field slot without blocking flags</span><span><i class="lg dl"></i>Deadline</span></div></div>
       ${gantt(plan, tls)}
     </section>
+
+    ${plan.jobs.some((r) => r.scheduled) ? `<section class="panel" aria-labelledby="sc-h"><h2 id="sc-h">Before each planned job</h2>
+      <p class="small muted" style="margin:-4px 0 10px">Drift checks ran on every 15-minute slot. Rain and surface concerns are listed separately, and unknown product information stays unknown.</p>
+      <div class="sc-grid">${plan.jobs.filter((r) => r.scheduled).map((r) => { const j = jobById(r.job_id); return `<div class="sc-card">
+        <div><b>${esc(j.id)} · ${esc(fieldName(j.field_id))}</b> <span class="xs muted">${when(r.start)}–${hm(r.end)}</span></div>
+        <div style="margin:4px 0 2px">${decisionTag(r.start_decision_id, null)} <span class="xs muted">at the planned start</span></div>
+        ${surfaceSection(r)}${preChecks(r)}</div>`; }).join('')}</div></section>` : ''}
 
     ${unsched.length ? `<section class="panel" aria-labelledby="u-h"><h2 id="u-h">Unscheduled</h2>
       ${unsched.map((r) => { const j = jobById(r.job_id); return `<div class="unsched">${chip('STOP')} <b>${esc(j.id)} · ${esc(fieldName(j.field_id))}</b>
@@ -110,7 +118,7 @@ function gantt(plan, tls) {
     if (r?.scheduled) {
       const prepL = x(r.depart), prepW = x(r.start) - prepL;
       bars += `<div class="g-bar prep" style="left:${prepL}%;width:${Math.max(0.6, prepW)}%" title="Travel ${r.travel_min} min + setup ${r.setup_min} min"></div>`;
-      bars += `<button type="button" class="g-bar" style="left:${x(r.start)}%;width:${Math.max(1.2, x(r.end) - x(r.start))}%" data-explain="hold" data-field="${esc(j.field_id)}"
+      bars += `<button type="button" class="g-bar" style="left:${x(r.start)}%;width:${Math.max(1.2, x(r.end) - x(r.start))}%" data-explain="hold" data-field="${esc(j.field_id)}" title="Decision ${esc(r.start_decision_id || '')} at the planned start"
         aria-label="${esc(j.id)} ${when(r.start)} to ${hm(r.end)}"></button>`;
       bars += `<div class="g-lab" style="left:${x(r.depart)}%">${esc(j.id)} · ${hm(r.start)}–${hm(r.end)} <span>${r.wait_min > 0 ? `waits ${dur(r.wait_min)} for conditions` : ''}</span></div>`;
       const rh = state.catalog.products[j.product_id]?.constraints.rainfast_h.value;

@@ -1,5 +1,5 @@
 import { state, chip, esc, icon, when, hm, dur, kindTag, compass, fieldProps, productName, unitName, planFor } from './core.js';
-import { releaseSection, dataSupport } from './insight.js';
+import { releaseSection, dataSupport, decisionTag, trendSection, heightRefs, observationsSection, surfaceSection, preChecks } from './insight.js';
 
 // ----------------------------------------------------- cross-section SVG
 // Vertical slice at the sensor mast: 5 ft and 30 ft sensors, temperatures, and
@@ -75,7 +75,7 @@ export const askRows = (fid, items) => `<div class="ask">${items.map(([topic, ic
      <svg class="ic sm ask-go" aria-hidden="true"><use href="#i-chev"/></svg></button>`).join('')}</div>`;
 
 // ------------------------------------------------------------ status panel
-export function statusPanel(a, fp, releaseFt, live) {
+export function statusPanel(a, fp, releaseFt, live, obs) {
   const m = a.metrics, rd = a.reading, g = a.ground_only, pv = a.provenance;
   const flagged = a.checks;
   const job = state.jobs.find((j) => j.field_id === fp.id && j.status === 'open');
@@ -85,12 +85,14 @@ export function statusPanel(a, fp, releaseFt, live) {
     <div class="status-head"><div><h2 style="margin:0">${esc(fp.name)}</h2>
       <div class="small muted">${esc(fp.crop)} · ${fp.acres} ac · ${esc(fp.grower)}</div></div>${chip(a.status, 'lg')}</div>
     <p class="reason"><b>${esc(a.headline)}.</b> ${esc(a.reason)}</p>
+    <div style="margin:-2px 0 6px">${decisionTag(a.decision_id, a.rule_version)}</div>
     <div class="small muted">${kindTag(pv.kind)} Reading ${pv.observed_at ? when(pv.observed_at) + ' MST' : 'unavailable'} · viewed ${when(a.time)} ${m.age_min != null ? `· ${Math.round(m.age_min)} min old` : ''}</div>
     <div class="compare">
       <div><div class="k">Single low station only</div>${chip(g.status)}</div>
       <div><div class="k">Paired-height mast</div>${chip(a.status)}</div>
       ${a.blind_spot ? `<div class="blind">${icon('caution', 'sm')} Ground-only reading looks acceptable. The upper sensor exposes the problem.</div>` : ''}
     </div>
+    ${trendSection(a)}
     ${askRows(fp.id, [['hold', 'chat', 'Explain this status', 'Plain-language reason, English or Spanish'],
       ['neighbors', 'pin', 'Which neighbors need attention?', ''], ['missing', 'info', 'What information is missing?', '']])}
   </div>
@@ -110,6 +112,7 @@ export function statusPanel(a, fp, releaseFt, live) {
       <dt>Rain probability</dt><dd>${rd?.rain_prob_pct != null ? rd.rain_prob_pct + ' %<span class="demo-note"> (simulated forecast)</span>' : '—'}</dd>
       <dt>Rule version</dt><dd>${esc(a.rule_version)}</dd></dl></details>
   </div>
+  ${heightRefs(a, fp, releaseFt)}
   ${releaseSection(a)}
   <div class="side-sec">
     <h3>Checks</h3>
@@ -125,11 +128,13 @@ export function statusPanel(a, fp, releaseFt, live) {
       <p class="xs muted" style="margin-top:6px">Attention check from wind direction and distance only. Not an exposure, deposition or safe-distance prediction.</p>`
       : '<p class="small muted">No marked area within the attention radius.</p>'}
   </div>
+  ${observationsSection(obs?.meta, obs?.list)}
   ${dataSupport(a, live)}
   ${job ? `<div class="side-sec"><h3>Treatment request</h3>
     <dl class="kv"><dt>Reference</dt><dd>${esc(job.reference)}</dd><dt>Product</dt><dd>${esc(productName(job.product_id))}</dd>
     <dt>Window</dt><dd>${when(job.earliest_start)} → ${when(job.latest_completion)}</dd>
     <dt>Plan</dt><dd>${r?.scheduled ? `${when(r.start)}–${hm(r.end)} with ${esc(unitName(r.unit_id))}` : 'No suitable window found before the requested deadline - review with your PCA.'}</dd></dl>
+    ${r?.scheduled ? `<div style="margin-top:10px">${decisionTag(r.start_decision_id, null)} <span class="xs muted">at the planned start</span></div>${surfaceSection(r)}${preChecks(r)}` : ''}
     <div style="margin-top:12px">${askRows(fp.id, [['rain', 'rain', 'Can it finish before the forecast rain?', ''], ['order', 'schedule', 'Why this job order?', '']])}</div></div>` : ''}`;
 }
 

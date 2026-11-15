@@ -53,10 +53,13 @@ def _areas():
 
 def _assess(fid, at, product_id=None):
     f = _field(fid)
+    if product_id is None:  # one decision per field+time: default to the open job's product everywhere
+        product_id = (_job_for_field(fid) or {}).get("product_id")
     rd = SCENARIO.reading(f["sensor_id"], at) if f["sensor_id"] else None
     prod = catalog.PRODUCTS.get(product_id) if product_id else None
     tr = SCENARIO.trend(f["sensor_id"], at) if f["sensor_id"] else None
-    a = engine.assess(rd, at, f, _areas(), prod, STATE["overrides"], trend=tr)
+    prev = SCENARIO.reading(f["sensor_id"], at - timedelta(minutes=15)) if f["sensor_id"] else None
+    a = engine.assess(rd, at, f, _areas(), prod, STATE["overrides"], trend=tr, prev_reading=prev, observations=_recent_obs(fid, at))
     a["field_id"] = fid
     if not f["sensor_id"]:
         a["reason"] = "No paired-height sensor covers this field. Inversions cannot be detected here, so it cannot be assessed."
@@ -72,6 +75,16 @@ def _assess(fid, at, product_id=None):
         a["at_release"]["unit"] = u["name"]
     a["field_terrain"] = _TERRAIN_STATS.get(fid)
     return a
+
+
+def _recent_obs(fid, at):
+    win = thresholds(STATE["overrides"])["observation_valid_min"]
+    out = []
+    for o in store.list_observations(fid):
+        st = o.get("scenario_time")
+        if st and 0 <= (at - datetime.fromisoformat(st)).total_seconds() / 60 <= win:
+            out.append(o)
+    return out
 
 
 def _job_for_field(fid):
@@ -256,6 +269,9 @@ def get_explain(topic: str, field_id: str | None = None, job_id: str | None = No
             res = explain.equipment_why(ev, job, lang)
     else:
         raise HTTPException(400, "Unknown topic")
+    if topic in ("hold", "neighbors", "missing"):
+        res["decision_id"] = a["decision_id"]
+        res["facts"]["decision_id"] = a["decision_id"]
     return explain.maybe_ai(res)
 
 
@@ -281,11 +297,12 @@ def monitor(body: dict = Body(...)):
         alert, new = store.raise_alert(fid, job.get("id"), "critical", a["status"], msg, at.isoformat())
         if new:
             store.record("alert", f"{a['status']} during application on {_field(fid)['name']}: {msg}",
-                         {"checks": crit, "pass_index": body.get("pass_index"), "reading": a["reading"]},
+                         {"checks": crit, "pass_index": body.get("pass_index"), "reading": a["reading"], "decision_id": a["decision_id"]},
                          field_id=fid, job_id=job.get("id"), status=a["status"], scenario_time=at.isoformat())
-    cleared = store.clear_alerts(fid, active_rules)
+    clr = store.clear_alerts(fid, active_rules, int(thresholds(STATE["overrides"])["alert_clear_ticks"]))
+    cleared = clr["cleared"]
     return {"time": at.isoformat(), "status": a["status"], "critical": critical, "new_alert": new, "alert": alert,
-            "cleared_alerts": cleared, "reason": a["reason"], "assessment": a,
+            "cleared_alerts": cleared, "clearing": clr["pending"], "decision_id": a["decision_id"], "reason": a["reason"], "assessment": a,
             "instruction": "Simulated vehicle paused. In a real operation, follow your stop procedure and label directions; "
                            "this prototype does not advise continuing to the row end." if critical else None}
 
@@ -305,6 +322,7 @@ def inject(body: dict = Body(...)):
 def reset(body: dict = Body(default={})):
     SCENARIO.reset_events()
     store.reset_alerts()
+    store.reset_observations()
     if body.get("jobs", True):
         store.seed(SCENARIO, force=True)
     STATE["overrides"] = {}
@@ -381,7 +399,8 @@ def snapshot(body: dict = Body(default={})):
     at = _t(body.get("time"))
     a = _assess(fid, at)
     rid = store.record("assessment", f"{_field(fid)['name']}: {a['status']} - {a['headline']}",
-                       {"reading": a["reading"], "checks": a["checks"], "metrics": a["metrics"], "ground_only": a["ground_only"]},
+                       {"decision_id": a["decision_id"], "rule_version": a["rule_version"], "reading": a["reading"], "checks": a["checks"],
+                        "metrics": a["metrics"], "ground_only": a["ground_only"], "at_release": a.get("at_release")},
                        field_id=fid, status=a["status"], scenario_time=at.isoformat())
     return {"id": rid}
 
@@ -548,4 +567,37 @@ def photos():
             "note": "Representative photos from Wikimedia Commons. They are not photos of the fictional fields or of the specific units in this plan."}
 
 
+
+
+
+# --------------------------------------------------------- observations
+OBS_ITEMS = {"dust_suspended": ["yes", "no", "not_checked"], "smoke_layer": ["yes", "no", "not_checked"],
+             "fog": ["yes", "no", "not_checked"], "dew": ["yes", "no", "not_checked"], "frost": ["yes", "no", "not_checked"],
+             "cloud_cover": ["clear", "partly", "overcast", "not_checked"], "wind_variability": ["steady", "variable", "not_checked"]}
+
+
+@app.get("/api/observations")
+def observations(field_id: str | None = None):
+    return {"items": OBS_ITEMS, "observations": store.list_observations(field_id),
+            "rules": "Supporting evidence only. Signs of stable air add caution; 'no' or 'not checked' never establishes safe conditions or overrides measured risk."}
+
+
+@app.post("/api/observations")
+def add_observation(body: dict = Body(...)):
+    f = _field(body.get("field_id"))
+    items = {k: (body.get("items") or {}).get(k, "not_checked") for k in OBS_ITEMS}
+    for k, v in items.items():
+        if v not in OBS_ITEMS[k]:
+            raise HTTPException(422, f"Invalid value for {k}: {v}")
+    lon, lat = to_lonlat(*geo_centroid(f["poly"]))
+    o = {"field_id": f["id"], "observer": (body.get("observer") or "").strip() or None, "lat": body.get("lat") or lat, "lon": body.get("lon") or lon,
+         "scenario_time": _t(body.get("time")).isoformat(), "items": items, "notes": (body.get("notes") or "").strip() or None}
+    oid = store.add_observation(o)
+    store.record("observation", f"Field observation at {f['name']} by {o['observer'] or 'unnamed observer'}: " +
+                 ", ".join(f"{k.replace('_', ' ')}={v}" for k, v in items.items() if v != "not_checked") or "nothing checked",
+                 o, field_id=f["id"], scenario_time=o["scenario_time"], simulated=False)
+    return {"id": oid, **o}
+
+
+# keep the static mount last so API routes registered above take precedence
 app.mount("/", StaticFiles(directory=WEB), name="web")
