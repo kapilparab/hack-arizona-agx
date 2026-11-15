@@ -754,10 +754,28 @@ async function monitorTick() {
 async function injectCritical() {
   const fp = fieldProps(state.selectedField);
   if (!fp.sensor_id) { toast('This field has no sensor to change.', true); return; }
-  const at = addMin(state.time, 15);
+  // The surge must land inside the replayed application, or the replay never meets it.
+  // Not playing: place it about a third of the way into the planned job and start the replay.
+  // Playing: 15 min after the replay time, as before.
+  const { r } = jobAndPlan();
+  const playing = !!V.play?.running;
+  const planned = !!r?.scheduled;
+  let at = addMin(state.time, 15);
+  if (planned && !playing) {
+    const len = Math.max(15, minutesBetween(r.start, r.end));
+    at = addMin(r.start, Math.min(len - 1, Math.max(15, Math.round((len * 0.3) / 15) * 15)));
+  }
   try {
     await api('/api/scenario/inject', { method: 'POST', body: { field_id: fp.id, time: at } });
-    toast(`Simulated wind surge scheduled at ${fp.name} from ${when(at)} for 60 min.`);
+    if (planned && !playing) {
+      stopPlay(true);
+      toast(`Simulated wind surge at ${fp.name} from ${hm(at)} for 60 min, during the planned application (${hm(r.start)}–${hm(r.end)}). Replay started: monitoring will stop the vehicle when the surge arrives.`);
+      startPlay();
+    } else if (!planned) {
+      toast(`Simulated wind surge at ${fp.name} from ${when(at)} for 60 min. This field has no planned application to replay; move the time slider to ${hm(at)} to see the Stop.`);
+    } else {
+      toast(`Simulated wind surge scheduled at ${fp.name} from ${when(at)} for 60 min.`);
+    }
   } catch (e) { toast(e.message, true); }
 }
 

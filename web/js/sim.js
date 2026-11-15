@@ -101,7 +101,7 @@ function render() {
         <p class="hint" id="sim-scn-desc">${esc(state.meta.scenario.description || '')}</p></section>
       <section class="sim-sec"><h3>Scenario clock and replay</h3><p class="hint">Scrub simulated observations and forecast, and replay the planned application.</p>
         <div id="sim-map-slot">${mapOnly}</div></section>
-      <section class="sim-sec"><h3>Events</h3><p class="hint">Inject a sudden wind surge at the selected field, 15 minutes after the current scenario time, to test monitoring and alerts.</p>
+      <section class="sim-sec"><h3>Events</h3><p class="hint">Inject a sudden wind surge (13.5 mph at 5 ft) at the selected field. If the replay is not running, the surge is placed inside the planned application and the replay starts; during a replay it arrives 15 minutes after the replay time.</p>
         <button type="button" class="btn danger" id="sim-inject" ${onMap ? '' : 'disabled'}>${icon('caution', 'sm')}Simulate critical change</button></section>
       <section class="sim-sec"><h3>Rule thresholds</h3><p class="hint">Prototype assumptions and challenge defaults. Changes are recorded and the plan is recalculated.</p>
         <form id="sim-thr" class="form-grid" style="grid-template-columns:1fr 1fr">${Object.entries(state.meta.thresholds).map(([k, t]) =>
