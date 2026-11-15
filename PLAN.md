@@ -34,54 +34,64 @@ As demonstrated by EPA Spray Drift studies and TeeJet nozzle engineering, **spra
 
 ---
 
-## 2. System Architecture: Temporal Forecaster + Spatial Map Intelligence
+## 2. System Architecture: Multi-Height Drift Intelligence & Risk Detection
+
+### Vertical Atmospheric Profile: Ground Level (0m) to All Aloft Heights (2m, 80m, 120m, 180m)
+Standard agricultural weather stations sample microclimate at a single height (~5 ft / 2m). However, chemical drift physics, spray droplet suspension, and volatile off-target movement are governed by **continuous vertical temperature and wind gradients across the entire boundary layer**:
+1. **Ground Level (0m Soil Surface Skin — `soil_temperature_0cm`)**: Radiative heat loss cools the soil surface rapidly under clear desert skies. Cold, dense air accumulates at ground level ($T_{\text{ground}} < T_{\text{canopy}}$), triggering surface radiation inversions that trap ultra-fine mist right at the canopy release zone.
+2. **Canopy / Shelter Height (2m / ~6.5 ft — `temperature_2m`)**: The standard boom release zone and baseline reference height for EPA spray regulations.
+3. **Low Aloft (80m / ~262 ft — `temperature_80m`)**: The primary inversion cap height. When $T_{80\text{m}} > T_{2\text{m}}$, vertical dispersion is suppressed, transforming fine droplets into a laminar suspended aerosol cloud.
+4. **Mid Aloft (120m / ~394 ft — `temperature_120m`)**: Captures intermediate boundary-layer decoupling and elevated capping layers.
+5. **High Aloft (180m / ~591 ft — `temperature_180m`)**: Captures synoptic desert inversion lids and regional subsidence layers. An elevated warm lid at 120m–180m creates a dangerous blind spot where surface stations observe normal lapse, yet chemical plumes rising past 80m become trapped and travel for miles before descending onto adjacent fields.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                   CanopyGuard Pro — Unified Architecture                         │
-└─────────────────────────────────────────┬────────────────────────────────────────┘
-                                          │
-        ┌─────────────────────────────────┴─────────────────────────────────┐
-        ▼                                                                   ▼
-┌──────────────────────────────────┐               ┌──────────────────────────────────┐
-│ Open-Meteo Multi-Height Engine   │               │ Interactive Scenario Simulator   │
-│ • Yuma Valley (32.71, -114.70)   │               │ • Scenario 1: Yuma Inversion Trap│
-│ • Marana / Pima (32.44, -111.23) │               │ • Scenario 2: Aloft Katabatic    │
-│ • 2m & 80m temp, 10m & 80m wind  │               │ • Scenario 3: Clean Yuma Window  │
-└────────────────┬─────────────────┘               └────────────────┬─────────────────┘
-                 │                                                  │
-                 └────────────────────────┬─────────────────────────┘
-                                          ▼
-                   ┌──────────────────────────────────────────────┐
-                   │   Reading(t_low, t_high, w_low, w_high, ...)  │
-                   └──────────────────────┬───────────────────────┘
-                                          │
-        ┌─────────────────────────────────┴─────────────────────────────────┐
-        ▼                                                                   ▼
-┌───────────────────────────────────────────┐   ┌───────────────────────────────────────────┐
-│     Physics, Chemical & Nozzle Engine     │   │      Calibrated ML Forecaster (0-12h)     │
-│ • Inversion: ΔT = T_high - T_low          │   │ • HistGradientBoostingClassifier          │
-│ • EPA Wind Window (3–10 mph)              │   │ • Features: Diurnal Solar, Inversion ΔT   │
-│ • TeeJet Nozzle (Fine ➔ Ultra-Coarse)     │   │ • Output: Hourly P(unsafe) & Safe Windows │
-│ • Chemical Mode: Systemic/Contact & Pre/Post│ │ • Validated Brier Score vs. Persistence   │
-└─────────────────────┬─────────────────────┘   └─────────────────────┬─────────────────────┘
-                      │                                               │
-                      └───────────────────────┬───────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│             CanopyGuard Pro — Multi-Height Vertical Stratification Architecture        │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │
+        ┌───────────────────────────────────┴───────────────────────────────────┐
+        ▼                                                                       ▼
+┌──────────────────────────────────────┐               ┌──────────────────────────────────────┐
+│  Open-Meteo Multi-Height Engine      │               │ Multi-Tier Scenario Simulator        │
+│ • Yuma Valley Basin & Mesa           │               │ • Hero 1: Deep Ground-to-180m Inversion
+│ • Marana / Pima Avra Valley          │               │ • Hero 2: Aloft Katabatic Wind Shear │
+│ • 0m Soil, 2m Canopy, 80m, 120m, 180m│               │ • Hero 3: Elevated Capping Lid Blind │
+│ • 10m, 80m, 120m, 180m Wind & Dir    │               │ • Hero 4: Clean Daytime Spray Window │
+└──────────────────┬───────────────────┘               └──────────────────┬───────────────────┘
+                   │                                                      │
+                   └──────────────────────────┬───────────────────────────┘
                                               ▼
-┌───────────────────────────────────────────────────────────────────────────────────────────┐
-│                                FastAPI Server (app/main.py)                               │
-│  GET /assess  ·  GET /forecast  ·  GET /map/parcels  ·  GET /map/plume  ·  GET /logs      │
-└─────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────────┐
+                    │ Multi-Height TowerReading (0m, 2m, 80m, 120m, 180m)│
+                    └─────────────────────────┬────────────────────────┘
                                               │
-                      ┌───────────────────────┴───────────────────────┐
-                      ▼                                               ▼
-┌───────────────────────────────────────────┐   ┌───────────────────────────────────────────┐
-│       SQLite Compliance Audit Store       │   │   Interactive Spatial & Cab Web Console   │
-│ • Time-stamped microclimate deltas        │   │ • Leaflet.js 20, 40, 80-Acre Parcel Map   │
-│ • Chemical name, nozzle type & boom ht    │   │ • Dynamic Spray Drift Cone & Buffer Layer │
-│ • EPA compliance CSV export for PCAs      │   │ • Side-by-Side "Ground vs CanopyGuard"    │
-│ • Push notifications (ntfy.sh webhook)    │   │ • 3-Minute Guided Judge Demo Mode         │
-└───────────────────────────────────────────┘   └───────────────────────────────────────────┘
+        ┌─────────────────────────────────────┴─────────────────────────────────────┐
+        ▼                                                                           ▼
+┌───────────────────────────────────────────────┐   ┌───────────────────────────────────────────────┐
+│     Multi-Height Physics & Rules Engine       │   │       Calibrated ML Forecaster (0-12h)        │
+│ • Full Column Lapse Rates (°F/100m)           │   │ • HistGradientBoostingClassifier              │
+│ • 4 Inversion Regimes (Surface, Low, Cap, Deep│   │ • Features: Multi-Tier ΔT, Solar Rad, Wind    │
+│ • Multi-Tier Wind & Directional Shear         │   │ • Output: Hourly P(unsafe) & Safe Windows     │
+│ • Trapping Risk Score (0-100) & AgDRIFT Mult  │   │ • Validated Brier Score vs. Persistence       │
+│ • TeeJet Nozzle (Fine ➔ Ultra-Coarse)         │   │                                               │
+└───────────────────────┬───────────────────────┘   └───────────────────────┬───────────────────────┘
+                        │                                                   │
+                        └─────────────────────────┬─────────────────────────┘
+                                                  ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   FastAPI Server (app/main.py)                                    │
+│    GET /assess  ·  GET /assess/profile  ·  GET /forecast  ·  GET /map/parcels  ·  GET /logs       │
+└─────────────────────────────────────────────────┬─────────────────────────────────────────────────┘
+                                                  │
+                        ┌─────────────────────────┴─────────────────────────┐
+                        ▼                                                   ▼
+┌───────────────────────────────────────────────┐   ┌───────────────────────────────────────────────┐
+│         SQLite Compliance Audit Store         │   │     Interactive Spatial & Cab Web Console     │
+│ • Complete 5-tier vertical profile logged     │   │ • Vertical Lapse Profile Visualization Chart  │
+│ • Chemical name, nozzle type & boom height    │   │ • Leaflet.js 20, 40, 80-Acre Parcel Map       │
+│ • EPA compliance CSV export for PCAs          │   │ • Dynamic Spray Drift Cone & Buffer Encroach  │
+│ • Push notifications (ntfy.sh webhook)        │   │ • Side-by-Side "Ground Only vs CanopyGuard"   │
+└───────────────────────────────────────────────┘   └───────────────────────────────────────────────┘
 ```
 
 ---
@@ -203,21 +213,81 @@ class FieldParcel(BaseModel):
     center_lon: float
     boundary_geojson: dict
 
+class InversionTypeEnum(str, Enum):
+    NONE = "Normal Atmospheric Lapse (Safe Dispersion)"
+    SURFACE_RADIATION = "Surface Radiation Inversion (0m Soil - 2m Canopy)"
+    LOW_LEVEL_LID = "Low-Level Inversion Lid (2m Canopy - 80m Aloft)"
+    ELEVATED_CAP = "Elevated Capping Inversion (80m - 180m Aloft)"
+    DEEP_COLUMN = "Deep Multi-Tier Inversion (Continuous Column 0m - 180m)"
+
+class InversionSeverityEnum(str, Enum):
+    NONE = "None"
+    MILD = "Mild (+0.1°F to +1.0°F)"
+    MODERATE = "Moderate (+1.0°F to +2.5°F)"
+    STRONG = "Strong (+2.5°F to +5.0°F)"
+    EXTREME = "Extreme (> +5.0°F)"
+
+class HeightLevelReading(BaseModel):
+    height_m: float = Field(..., description="Height above ground level in meters (0m, 2m, 10m, 80m, 120m, 180m)")
+    height_name: str = Field(..., description="Human-readable level description")
+    temp_f: float = Field(..., description="Temperature at this level in °F")
+    wind_speed_mph: Optional[float] = Field(default=None, description="Wind speed at this level in mph")
+    wind_dir_deg: Optional[float] = Field(default=None, description="Wind direction at this level in degrees")
+    delta_t_from_ground_f: float = Field(default=0.0, description="Temperature delta relative to ground 0m (T_h - T_0m)")
+    delta_t_from_2m_f: float = Field(default=0.0, description="Temperature delta relative to 2m canopy (T_h - T_2m)")
+    lapse_rate_f_per_100m: float = Field(default=0.0, description="Vertical lapse rate in °F per 100 meters")
+    is_inverted: bool = Field(default=False, description="True if warmer than the level below (inversion)")
+
+class HeightProfile(BaseModel):
+    ground_0m: HeightLevelReading
+    canopy_2m: HeightLevelReading
+    aloft_80m: HeightLevelReading
+    aloft_120m: HeightLevelReading
+    aloft_180m: HeightLevelReading
+    levels: List[HeightLevelReading] = Field(default_factory=list)
+
+class MultiHeightInversionAnalysis(BaseModel):
+    inversion_detected: bool = Field(..., description="True if any inversion layer exists from 0m to 180m")
+    primary_inversion_type: InversionTypeEnum
+    inversion_types: List[InversionTypeEnum] = Field(default_factory=list)
+    severity: InversionSeverityEnum
+    max_delta_t_f: float = Field(..., description="Peak positive temperature inversion delta across any level")
+    max_inversion_height_m: float = Field(..., description="Highest altitude where inversion persists")
+    ground_to_canopy_delta_f: float = Field(..., description="T_2m - T_0m (Surface radiation cooling delta)")
+    canopy_to_80m_delta_f: float = Field(..., description="T_80m - T_2m (Primary EPA inversion delta)")
+    canopy_to_120m_delta_f: float = Field(..., description="T_120m - T_2m (Mid-aloft inversion delta)")
+    canopy_to_180m_delta_f: float = Field(..., description="T_180m - T_2m (High-aloft synoptic delta)")
+    max_wind_shear_mph: float = Field(..., description="Maximum wind speed difference between surface and aloft tiers")
+    max_dir_shear_deg: float = Field(..., description="Maximum directional crosswind divergence aloft")
+    trapping_risk_score: float = Field(..., description="Composite chemical trapping index from 0.0 (safe) to 100.0 (extreme)")
+    drift_dispersion_multiplier: float = Field(..., description="AgDRIFT downwind distance multiplier based on vertical stability")
+    vertical_profile_summary: str = Field(..., description="Detailed explanation of vertical atmospheric stratification")
+
 class TowerReading(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     location_name: str = "UofA Yuma Ag Center (Block 12)"
     lat: float = 32.7130
     lon: float = -114.7000
     elevation_ft: float = 140.0
-    # Lower level (~5-6 ft / 2m)
-    t_low_f: float = Field(..., description="Temperature at 2m/5ft in °F")
-    wind_low_mph: float = Field(..., description="Wind speed at 2m/5ft in mph")
-    dir_low_deg: float = Field(default=0.0, description="Wind direction low in degrees")
-    rh_low: float = Field(default=25.0, description="Relative humidity %")
-    # Upper level (~30-80m / 30ft)
-    t_high_f: float = Field(..., description="Temperature aloft in °F")
-    wind_high_mph: float = Field(..., description="Wind speed aloft in mph")
-    dir_high_deg: float = Field(default=0.0, description="Wind direction aloft in degrees")
+    # Ground level (0m soil skin)
+    t_ground_0m_f: float = Field(default=62.0, description="True ground / soil surface skin temperature in °F")
+    # Canopy level (2m / 5-6ft)
+    t_low_f: float = Field(..., description="Temperature at 2m canopy / weather station in °F")
+    wind_low_mph: float = Field(..., description="Wind speed at 2m/10m surface anemometer in mph")
+    dir_low_deg: float = Field(default=0.0, description="Wind direction surface in degrees")
+    rh_low: float = Field(default=25.0, description="Relative humidity % at 2m")
+    # Low aloft level (80m / ~262ft)
+    t_high_f: float = Field(..., description="Temperature at 80m aloft in °F")
+    wind_high_mph: float = Field(..., description="Wind speed at 80m aloft in mph")
+    dir_high_deg: float = Field(default=0.0, description="Wind direction at 80m aloft in degrees")
+    # Mid aloft level (120m / ~394ft)
+    t_120m_f: float = Field(default=62.0, description="Temperature at 120m aloft in °F")
+    wind_120m_mph: float = Field(default=6.0, description="Wind speed at 120m aloft in mph")
+    dir_120m_deg: float = Field(default=0.0, description="Wind direction at 120m aloft in degrees")
+    # High aloft level (180m / ~591ft)
+    t_180m_f: float = Field(default=61.0, description="Temperature at 180m aloft in °F")
+    wind_180m_mph: float = Field(default=6.5, description="Wind speed at 180m aloft in mph")
+    dir_180m_deg: float = Field(default=0.0, description="Wind direction at 180m aloft in degrees")
     solar_rad_w_m2: float = Field(default=0.0, description="Shortwave solar radiation W/m²")
 
 class RuleEvaluation(BaseModel):
@@ -253,27 +323,254 @@ class Assessment(BaseModel):
     product: ChemicalProduct
     nozzle: TeeJetNozzleType
     boom_height_inches: int
+    multi_height_analysis: Optional[MultiHeightInversionAnalysis] = None
+    height_profile: Optional[HeightProfile] = None
     spatial_plume: Optional[SpatialPlumeGeometry] = None
 ```
 
 ---
 
-### 4.3. Physics, Nozzle & EPA Rules Engine (`app/rules.py`)
+### 4.3. Physics, Nozzle & Multi-Height EPA Rules Engine (`app/rules.py`)
 ```python
 import math
+from typing import Tuple, List
 from app.schemas import (
     TowerReading, ChemicalProduct, Assessment, StatusEnum,
-    RuleEvaluation, TeeJetNozzleType, ChemicalCategory, SpatialPlumeGeometry, POPULAR_PRODUCTS
+    RuleEvaluation, TeeJetNozzleType, ChemicalCategory, SpatialPlumeGeometry,
+    HeightLevelReading, HeightProfile, MultiHeightInversionAnalysis,
+    InversionTypeEnum, InversionSeverityEnum, POPULAR_PRODUCTS
 )
 
 def angle_diff(deg1: float, deg2: float) -> float:
     diff = abs(deg1 - deg2) % 360
     return 360 - diff if diff > 180 else diff
 
-def calculate_drift_distance(wind_mph: float, nozzle: TeeJetNozzleType, boom_height_in: int, delta_t: float) -> float:
+def analyze_multi_height_profile(r: TowerReading) -> Tuple[HeightProfile, MultiHeightInversionAnalysis]:
     """
-    Estimates downwind drift distance (in feet) using empirical EPA AgDRIFT curve fitting.
-    Inversion trapping acts as a multiplier holding fine aerosol droplets in suspension.
+    Evaluates vertical microclimate stratification from ground level (0m soil skin)
+    up through 2m canopy, 80m low aloft, 120m mid aloft, and 180m high aloft boundary layers.
+    Identifies 4 distinct inversion regimes:
+      1. Surface Radiation Inversion (0m -> 2m)
+      2. Low-Level Inversion Lid (2m -> 80m, primary EPA trigger)
+      3. Elevated Capping Inversion (80m -> 120m/180m aloft)
+      4. Deep Full-Column Inversion (continuous 0m -> 180m)
+    """
+    t_0m = r.t_ground_0m_f
+    t_2m = r.t_low_f
+    t_80m = r.t_high_f
+    t_120m = r.t_120m_f
+    t_180m = r.t_180m_f
+
+    w_10m = r.wind_low_mph
+    d_10m = r.dir_low_deg
+    w_80m = r.wind_high_mph
+    d_80m = r.dir_high_deg
+    w_120m = r.wind_120m_mph
+    d_120m = r.dir_120m_deg
+    w_180m = r.wind_180m_mph
+    d_180m = r.dir_180m_deg
+
+    # Height levels
+    lvl_0m = HeightLevelReading(
+        height_m=0.0,
+        height_name="Ground Level (0m Soil Skin)",
+        temp_f=t_0m,
+        delta_t_from_ground_f=0.0,
+        delta_t_from_2m_f=round(t_0m - t_2m, 2),
+        lapse_rate_f_per_100m=0.0,
+        is_inverted=False
+    )
+    # 0m to 2m lapse rate: (T_2m - T_0m) / (2m / 100m)
+    lapse_0_2 = round((t_2m - t_0m) / 0.02, 2)
+    lvl_2m = HeightLevelReading(
+        height_m=2.0,
+        height_name="Canopy Height (2m / 5-6ft)",
+        temp_f=t_2m,
+        wind_speed_mph=w_10m,
+        wind_dir_deg=d_10m,
+        delta_t_from_ground_f=round(t_2m - t_0m, 2),
+        delta_t_from_2m_f=0.0,
+        lapse_rate_f_per_100m=lapse_0_2,
+        is_inverted=(t_2m > t_0m)
+    )
+    # 2m to 80m lapse rate: (T_80m - T_2m) / (78m / 100m)
+    lapse_2_80 = round((t_80m - t_2m) / 0.78, 2)
+    lvl_80m = HeightLevelReading(
+        height_m=80.0,
+        height_name="Low Aloft (80m / ~262ft)",
+        temp_f=t_80m,
+        wind_speed_mph=w_80m,
+        wind_dir_deg=d_80m,
+        delta_t_from_ground_f=round(t_80m - t_0m, 2),
+        delta_t_from_2m_f=round(t_80m - t_2m, 2),
+        lapse_rate_f_per_100m=lapse_2_80,
+        is_inverted=(t_80m > t_2m)
+    )
+    # 80m to 120m lapse rate: (T_120m - T_80m) / (40m / 100m)
+    lapse_80_120 = round((t_120m - t_80m) / 0.40, 2)
+    lvl_120m = HeightLevelReading(
+        height_m=120.0,
+        height_name="Mid Aloft (120m / ~394ft)",
+        temp_f=t_120m,
+        wind_speed_mph=w_120m,
+        wind_dir_deg=d_120m,
+        delta_t_from_ground_f=round(t_120m - t_0m, 2),
+        delta_t_from_2m_f=round(t_120m - t_2m, 2),
+        lapse_rate_f_per_100m=lapse_80_120,
+        is_inverted=(t_120m > t_80m)
+    )
+    # 120m to 180m lapse rate: (T_180m - T_120m) / (60m / 100m)
+    lapse_120_180 = round((t_180m - t_120m) / 0.60, 2)
+    lvl_180m = HeightLevelReading(
+        height_m=180.0,
+        height_name="High Aloft (180m / ~591ft)",
+        temp_f=t_180m,
+        wind_speed_mph=w_180m,
+        wind_dir_deg=d_180m,
+        delta_t_from_ground_f=round(t_180m - t_0m, 2),
+        delta_t_from_2m_f=round(t_180m - t_2m, 2),
+        lapse_rate_f_per_100m=lapse_120_180,
+        is_inverted=(t_180m > t_120m)
+    )
+
+    profile = HeightProfile(
+        ground_0m=lvl_0m,
+        canopy_2m=lvl_2m,
+        aloft_80m=lvl_80m,
+        aloft_120m=lvl_120m,
+        aloft_180m=lvl_180m,
+        levels=[lvl_0m, lvl_2m, lvl_80m, lvl_120m, lvl_180m]
+    )
+
+    # Inversion Deltas relative to 2m reference
+    dt_ground_canopy = round(t_2m - t_0m, 2)
+    dt_2_80 = round(t_80m - t_2m, 2)
+    dt_2_120 = round(t_120m - t_2m, 2)
+    dt_2_180 = round(t_180m - t_2m, 2)
+
+    # Wind Shear and Directional Shear across all aloft tiers relative to 10m surface
+    shear_80 = abs(w_80m - w_10m)
+    shear_120 = abs(w_120m - w_10m)
+    shear_180 = abs(w_180m - w_10m)
+    max_wind_shear = round(max(shear_80, shear_120, shear_180), 1)
+
+    dir_shear_80 = angle_diff(d_80m, d_10m)
+    dir_shear_120 = angle_diff(d_120m, d_10m)
+    dir_shear_180 = angle_diff(d_180m, d_10m)
+    max_dir_shear = round(max(dir_shear_80, dir_shear_120, dir_shear_180), 1)
+
+    # Inversion Classifications
+    inv_types: List[InversionTypeEnum] = []
+    
+    # 1. Surface radiation inversion: Ground colder than canopy air
+    if dt_ground_canopy >= 1.5:
+        inv_types.append(InversionTypeEnum.SURFACE_RADIATION)
+    
+    # 2. Low-level inversion lid: Canopy cooler than 80m
+    if dt_2_80 > 0.0:
+        inv_types.append(InversionTypeEnum.LOW_LEVEL_LID)
+    
+    # 3. Elevated capping inversion: Warm layer above 80m (120m or 180m warmer than 80m or 2m)
+    if (t_120m > t_80m or t_180m > t_120m or dt_2_120 > 0.5 or dt_2_180 > 0.5) and InversionTypeEnum.LOW_LEVEL_LID not in inv_types:
+        inv_types.append(InversionTypeEnum.ELEVATED_CAP)
+
+    # 4. Deep column inversion: Inversion spans all tiers from ground/canopy to 180m
+    if dt_2_80 > 0.0 and dt_2_120 > 0.0 and dt_2_180 > 0.0:
+        inv_types.append(InversionTypeEnum.DEEP_COLUMN)
+
+    inversion_detected = len(inv_types) > 0
+    primary_type = inv_types[0] if inv_types else InversionTypeEnum.NONE
+    if InversionTypeEnum.DEEP_COLUMN in inv_types:
+        primary_type = InversionTypeEnum.DEEP_COLUMN
+    elif InversionTypeEnum.LOW_LEVEL_LID in inv_types:
+        primary_type = InversionTypeEnum.LOW_LEVEL_LID
+
+    # Max inversion delta
+    positive_deltas = [d for d in [dt_ground_canopy, dt_2_80, dt_2_120, dt_2_180] if d > 0.0]
+    max_dt = max(positive_deltas) if positive_deltas else 0.0
+
+    # Max inversion height
+    max_h = 0.0
+    if dt_2_180 > 0.0 or t_180m > t_120m:
+        max_h = 180.0
+    elif dt_2_120 > 0.0 or t_120m > t_80m:
+        max_h = 120.0
+    elif dt_2_80 > 0.0:
+        max_h = 80.0
+    elif dt_ground_canopy >= 1.5:
+        max_h = 2.0
+
+    # Severity classification
+    if max_dt > 5.0:
+        severity = InversionSeverityEnum.EXTREME
+    elif max_dt >= 2.5:
+        severity = InversionSeverityEnum.STRONG
+    elif max_dt >= 1.0:
+        severity = InversionSeverityEnum.MODERATE
+    elif max_dt > 0.0:
+        severity = InversionSeverityEnum.MILD
+    else:
+        severity = InversionSeverityEnum.NONE
+
+    # Trapping Risk Score (0 - 100)
+    trapping_score = min(100.0, max(0.0, (
+        (max_dt * 15.0) +
+        (15.0 if InversionTypeEnum.SURFACE_RADIATION in inv_types else 0.0) +
+        (25.0 if InversionTypeEnum.LOW_LEVEL_LID in inv_types else 0.0) +
+        (20.0 if InversionTypeEnum.ELEVATED_CAP in inv_types else 0.0) +
+        (25.0 if InversionTypeEnum.DEEP_COLUMN in inv_types else 0.0) +
+        (max_wind_shear * 1.5)
+    )))
+
+    # AgDRIFT dispersion multiplier
+    if severity == InversionSeverityEnum.EXTREME:
+        drift_mult = 3.8
+    elif severity == InversionSeverityEnum.STRONG:
+        drift_mult = 2.8
+    elif severity == InversionSeverityEnum.MODERATE:
+        drift_mult = 2.0
+    elif severity == InversionSeverityEnum.MILD:
+        drift_mult = 1.4
+    else:
+        drift_mult = 1.0
+
+    summary = (
+        f"Multi-tier vertical analysis: 0m={t_0m:.1f}°F, 2m={t_2m:.1f}°F, 80m={t_80m:.1f}°F, "
+        f"120m={t_120m:.1f}°F, 180m={t_180m:.1f}°F. "
+        f"{'INVERSION ACTIVE: ' + primary_type.value if inversion_detected else 'Normal atmospheric lapse.'} "
+        f"Max ΔT aloft: +{max_dt:.1f}°F. Aloft wind shear: {max_wind_shear:.1f} mph ({max_dir_shear:.0f}° divergence)."
+    )
+
+    analysis = MultiHeightInversionAnalysis(
+        inversion_detected=inversion_detected,
+        primary_inversion_type=primary_type,
+        inversion_types=inv_types,
+        severity=severity,
+        max_delta_t_f=round(max_dt, 2),
+        max_inversion_height_m=max_h,
+        ground_to_canopy_delta_f=dt_ground_canopy,
+        canopy_to_80m_delta_f=dt_2_80,
+        canopy_to_120m_delta_f=dt_2_120,
+        canopy_to_180m_delta_f=dt_2_180,
+        max_wind_shear_mph=max_wind_shear,
+        max_dir_shear_deg=max_dir_shear,
+        trapping_risk_score=round(trapping_score, 1),
+        drift_dispersion_multiplier=drift_mult,
+        vertical_profile_summary=summary
+    )
+
+    return profile, analysis
+
+def calculate_drift_distance(
+    wind_mph: float,
+    nozzle: TeeJetNozzleType,
+    boom_height_in: int,
+    drift_multiplier: float = 1.0,
+    aloft_wind_shear: float = 0.0
+) -> float:
+    """
+    Estimates downwind drift distance (in feet) using empirical EPA AgDRIFT curve fitting
+    augmented with multi-height inversion trapping and aloft shear multipliers.
     """
     nozzle_factors = {
         TeeJetNozzleType.FINE: 4.5,
@@ -284,15 +581,14 @@ def calculate_drift_distance(wind_mph: float, nozzle: TeeJetNozzleType, boom_hei
     }
     factor = nozzle_factors.get(nozzle, 1.0)
     boom_factor = (boom_height_in / 24.0) ** 1.3
-    inversion_multiplier = 2.5 if delta_t > 0.0 else 1.0
+    shear_factor = 1.0 + (min(aloft_wind_shear, 15.0) * 0.04)
     
-    # Base physics: D = V_wind * factor * boom_height * inversion_multiplier
-    base_dist = (wind_mph * 22.0) * factor * boom_factor * inversion_multiplier
+    # Base physics: D = V_wind * factor * boom_height * inversion_multiplier * shear_factor
+    base_dist = (wind_mph * 22.0) * factor * boom_factor * drift_multiplier * shear_factor
     return round(max(30.0, base_dist), 1)
 
 def build_drift_cone_polygon(lat: float, lon: float, bearing_deg: float, distance_ft: float, angle_deg: float = 35.0) -> list[list[float]]:
     """Generates a triangular downwind drift cone in [longitude, latitude] GeoJSON format."""
-    # Rough degree conversion for South Arizona (lat ~32.7°)
     meters_to_lat = 1.0 / 111000.0
     meters_to_lon = 1.0 / (111000.0 * math.cos(math.radians(lat)))
     dist_m = distance_ft * 0.3048
@@ -313,7 +609,7 @@ def build_drift_cone_polygon(lat: float, lon: float, bearing_deg: float, distanc
     return [p1, p2, p3, p1]
 
 def evaluate_ground_station_only(r: TowerReading, product: ChemicalProduct) -> StatusEnum:
-    """What a standard 5 ft single-height weather station concludes."""
+    """What a standard 5 ft single-height weather station concludes without aloft data."""
     if r.wind_low_mph < 3.0 or r.wind_low_mph > product.max_label_wind_mph:
         return StatusEnum.STOP
     if r.wind_low_mph > 8.0 or r.t_low_f > product.max_label_temp_f:
@@ -330,28 +626,29 @@ def assess_drift_risk(
     evals: list[RuleEvaluation] = []
     level = 0  # 0: GO, 1: CAUTION, 2: STOP
 
-    delta_t = round(r.t_high_f - r.t_low_f, 2)
-    wind_shear = round(abs(r.wind_high_mph - r.wind_low_mph), 1)
-    dir_shear = round(angle_diff(r.dir_high_deg, r.dir_low_deg), 1)
+    profile, multi_analysis = analyze_multi_height_profile(r)
+    delta_t = multi_analysis.canopy_to_80m_delta_f
+    wind_shear = multi_analysis.max_wind_shear_mph
+    dir_shear = multi_analysis.max_dir_shear_deg
 
-    # 1. EPA Inversion Rules (ΔT)
-    if delta_t >= 2.0:
+    # 1. Multi-Tier Inversion Rules
+    if multi_analysis.severity in [InversionSeverityEnum.STRONG, InversionSeverityEnum.EXTREME]:
         level = max(level, 2)
         evals.append(RuleEvaluation(
-            rule_name="EPA Inversion Prohibition",
+            rule_name="EPA Inversion Prohibition (Multi-Height)",
             status=StatusEnum.STOP,
-            measured=f"+{delta_t:.1f}°F aloft",
+            measured=f"+{multi_analysis.max_delta_t_f:.1f}°F ({multi_analysis.primary_inversion_type.value})",
             threshold="< 0.0°F (normal lapse)",
-            reason=f"Strong surface radiation inversion in river valley basin. Fine droplets trapped in stagnant layer will migrate off-target."
+            reason=f"Severe thermal inversion lid up to {multi_analysis.max_inversion_height_m:.0f}m. Fine droplets trapped in stagnant suspension will drift off-target for miles."
         ))
-    elif delta_t > 0.0:
+    elif multi_analysis.inversion_detected:
         level = max(level, 2)
         evals.append(RuleEvaluation(
-            rule_name="EPA Inversion Prohibition",
+            rule_name="EPA Inversion Prohibition (Multi-Height)",
             status=StatusEnum.STOP,
-            measured=f"+{delta_t:.1f}°F aloft",
+            measured=f"+{multi_analysis.max_delta_t_f:.1f}°F ({multi_analysis.primary_inversion_type.value})",
             threshold="< 0.0°F",
-            reason="Thermal inversion lid detected: legal violation of EPA spray drift mandate."
+            reason=f"Thermal stratification detected: legal violation of EPA spray drift mandate ({multi_analysis.primary_inversion_type.value})."
         ))
     elif delta_t >= -1.0:
         level = max(level, 1)
@@ -360,7 +657,7 @@ def assess_drift_risk(
             status=StatusEnum.CAUTION,
             measured=f"{delta_t:.1f}°F lapse",
             threshold="< -1.0°F",
-            reason="Isothermal condition: weak vertical mixing, inversion layer actively transitioning."
+            reason="Isothermal layer: weak vertical mixing, inversion layer transitioning."
         ))
     else:
         evals.append(RuleEvaluation(
@@ -371,7 +668,18 @@ def assess_drift_risk(
             reason="Normal daytime lapse rate allows safe vertical dispersion."
         ))
 
-    # 2. EPA Wind Speed Limits (3.0 – 10.0 mph)
+    # 2. Surface Radiation Inversion Check (0m Ground to 2m Canopy)
+    if multi_analysis.ground_to_canopy_delta_f >= 2.0:
+        level = max(level, 2)
+        evals.append(RuleEvaluation(
+            rule_name="Ground-Level Radiative Inversion (0m-2m)",
+            status=StatusEnum.STOP,
+            measured=f"Ground 0m is {abs(multi_analysis.ground_to_canopy_delta_f):.1f}°F colder than canopy",
+            threshold="< +1.0°F gradient",
+            reason="Cold air pooling at desert soil surface creates ultra-stable micro-inversion layer trapping fine spray right at release height."
+        ))
+
+    # 3. EPA Wind Speed Limits (3.0 – 10.0 mph)
     if r.wind_low_mph < 3.0:
         level = max(level, 2)
         evals.append(RuleEvaluation(
@@ -408,27 +716,27 @@ def assess_drift_risk(
             reason="Ideal laminar surface wind within EPA label specifications."
         ))
 
-    # 3. Aloft Wind Shear across Canopy Boundary
+    # 4. Multi-Tier Aloft Wind Shear across Canopy & Upper Tiers
     if wind_shear > 8.0 or dir_shear > 90.0:
         level = max(level, 2)
         evals.append(RuleEvaluation(
-            rule_name="Canopy Wind Shear",
+            rule_name="Multi-Tier Canopy Wind Shear",
             status=StatusEnum.STOP,
-            measured=f"Δ{wind_shear:.1f} mph, {dir_shear:.0f}° divergence",
+            measured=f"Δ{wind_shear:.1f} mph, {dir_shear:.0f}° divergence across column",
             threshold="ΔV <= 5 mph, Δθ <= 45°",
-            reason=f"Severe aloft wind shear: air above canopy is moving {wind_shear:.0f} mph faster with {dir_shear:.0f}° directional crosswind."
+            reason=f"Severe aloft wind shear: aloft flow is moving {wind_shear:.0f} mph faster with {dir_shear:.0f}° crosswind divergence."
         ))
     elif wind_shear > 5.0 or dir_shear > 45.0:
         level = max(level, 1)
         evals.append(RuleEvaluation(
-            rule_name="Canopy Wind Shear",
+            rule_name="Multi-Tier Canopy Wind Shear",
             status=StatusEnum.CAUTION,
-            measured=f"Δ{wind_shear:.1f} mph, {dir_shear:.0f}°",
+            measured=f"Δ{wind_shear:.1f} mph, {dir_shear:.0f}° divergence",
             threshold="ΔV <= 5 mph",
-            reason="Moderate aloft wind shear. Fine droplet fraction will detach into upper flow."
+            reason="Moderate aloft wind shear across boundary layer. Fine droplet fraction will detach into upper flow."
         ))
 
-    # 4. Chemical Mode of Action & TeeJet Nozzle Interaction
+    # 5. Chemical Mode of Action & TeeJet Nozzle Interaction
     if prod.category == ChemicalCategory.HERBICIDE_SYSTEMIC and nozzle in [TeeJetNozzleType.FINE, TeeJetNozzleType.MEDIUM]:
         level = max(level, 2)
         evals.append(RuleEvaluation(
@@ -453,11 +761,15 @@ def assess_drift_risk(
     ground_status = evaluate_ground_station_only(r, prod)
     blind_spot_caught = (ground_status == StatusEnum.GO and overall_status != StatusEnum.GO)
 
-    # Compute spatial drift plume geometry
-    drift_dist_ft = calculate_drift_distance(r.wind_low_mph, nozzle, boom_height_inches, delta_t)
+    # Compute spatial drift plume geometry with multi-height dispersion multiplier
+    drift_dist_ft = calculate_drift_distance(
+        r.wind_low_mph, nozzle, boom_height_inches,
+        drift_multiplier=multi_analysis.drift_dispersion_multiplier,
+        aloft_wind_shear=wind_shear
+    )
     poly = build_drift_cone_polygon(r.lat, r.lon, r.dir_low_deg, drift_dist_ft)
     
-    # Check if plume encroaches past a standard 20/40-acre parcel buffer (~300 ft)
+    # Check if plume encroaches past a standard 20/40-acre parcel buffer
     encroached = drift_dist_ft > prod.buffer_required_ft
     encroached_names = ["Adjacent Organic Romaine Block (40 ac)"] if encroached else []
 
@@ -480,7 +792,7 @@ def assess_drift_risk(
     }
     
     reasons = [e.reason for e in evals if e.status == overall_status]
-    plain_explanation = " | ".join(reasons) if reasons else "All microclimate, chemical, and nozzle criteria within safe limits."
+    plain_explanation = " | ".join(reasons) if reasons else "All microclimate, multi-height stability, and nozzle criteria within safe limits."
 
     return Assessment(
         timestamp=r.timestamp,
@@ -497,6 +809,8 @@ def assess_drift_risk(
         product=prod,
         nozzle=nozzle,
         boom_height_inches=boom_height_inches,
+        multi_height_analysis=multi_analysis,
+        height_profile=profile,
         spatial_plume=plume
     )
 ```
@@ -521,12 +835,19 @@ LOCATIONS = {
 }
 
 OFFLINE_FALLBACK = {
+    "t_ground_0m_f": 62.0,
     "t_low_f": 64.5,
     "t_high_f": 62.0,
+    "t_120m_f": 60.5,
+    "t_180m_f": 59.0,
     "wind_low_mph": 4.5,
     "wind_high_mph": 6.0,
+    "wind_120m_mph": 6.8,
+    "wind_180m_mph": 7.5,
     "dir_low_deg": 330.0,
     "dir_high_deg": 335.0,
+    "dir_120m_deg": 338.0,
+    "dir_180m_deg": 340.0,
     "rh_low": 24.0,
     "solar_rad_w_m2": 550.0
 }
@@ -543,13 +864,15 @@ def fetch_openmeteo_live(lat: float = 32.7130, lon: float = -114.7000, loc_name:
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}&longitude={lon}"
-        "&current=temperature_2m,temperature_80m,wind_speed_10m,wind_speed_80m,"
-        "wind_direction_10m,wind_direction_80m,relative_humidity_2m,shortwave_radiation"
+        "&current=temperature_2m,temperature_80m,temperature_120m,temperature_180m,"
+        "wind_speed_10m,wind_speed_80m,wind_speed_120m,wind_speed_180m,"
+        "wind_direction_10m,wind_direction_80m,wind_direction_120m,wind_direction_180m,"
+        "relative_humidity_2m,shortwave_radiation,soil_temperature_0cm"
         "&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto"
     )
 
     try:
-        resp = requests.get(url, timeout=4.0)
+        resp = requests.get(url, timeout=5.0)
         resp.raise_for_status()
         data = resp.json().get("current", {})
 
@@ -558,14 +881,21 @@ def fetch_openmeteo_live(lat: float = 32.7130, lon: float = -114.7000, loc_name:
             location_name=loc_name,
             lat=lat,
             lon=lon,
-            t_low_f=float(data.get("temperature_2m", 64.0)),
-            t_high_f=float(data.get("temperature_80m", 62.0)),
-            wind_low_mph=float(data.get("wind_speed_10m", 5.0)),
-            wind_high_mph=float(data.get("wind_speed_80m", 6.5)),
-            dir_low_deg=float(data.get("wind_direction_10m", 320.0)),
-            dir_high_deg=float(data.get("wind_direction_80m", 325.0)),
-            rh_low=float(data.get("relative_humidity_2m", 25.0)),
-            solar_rad_w_m2=float(data.get("shortwave_radiation", 500.0))
+            t_ground_0m_f=float(data.get("soil_temperature_0cm") or 62.0),
+            t_low_f=float(data.get("temperature_2m") or 64.0),
+            t_high_f=float(data.get("temperature_80m") or 62.0),
+            t_120m_f=float(data.get("temperature_120m") or 61.5),
+            t_180m_f=float(data.get("temperature_180m") or 60.5),
+            wind_low_mph=float(data.get("wind_speed_10m") or 5.0),
+            wind_high_mph=float(data.get("wind_speed_80m") or 6.5),
+            wind_120m_mph=float(data.get("wind_speed_120m") or 7.0),
+            wind_180m_mph=float(data.get("wind_speed_180m") or 7.5),
+            dir_low_deg=float(data.get("wind_direction_10m") or 320.0),
+            dir_high_deg=float(data.get("wind_direction_80m") or 325.0),
+            dir_120m_deg=float(data.get("wind_direction_120m") or 330.0),
+            dir_180m_deg=float(data.get("wind_direction_180m") or 335.0),
+            rh_low=float(data.get("relative_humidity_2m") or 25.0),
+            solar_rad_w_m2=float(data.get("shortwave_radiation") or 500.0)
         )
         _CACHE[cache_key] = (now, reading)
         return reading
@@ -588,58 +918,105 @@ from app.schemas import TowerReading
 
 SCENARIOS = {
     "yuma_radiation_inversion": {
-        "name": "Yuma Valley Dawn Inversion Trap (Hero Demo)",
-        "description": "Cold air drainage along the Colorado River creates a +4.2°F thermal lid. 5 ft ground wind is calm (3.8 mph), but fine insecticide mist will stay suspended for hours.",
+        "name": "Yuma Valley Dawn Inversion Trap (Deep Column)",
+        "description": "Cold air drainage along the Colorado River basin creates steep radiation cooling at ground (54.0°F), rising to +66.8°F aloft (+8.6°F total inversion). Ground wind is calm (3.8 mph), but fine insecticide mist will stay suspended for miles.",
         "reading": TowerReading(
             timestamp=datetime.utcnow(),
             location_name="UofA Yuma Ag Center (Valley Floor)",
             lat=32.7130,
             lon=-114.7000,
             elevation_ft=140.0,
-            t_low_f=58.2,
-            t_high_f=62.4,        # ΔT = +4.2°F -> Strong Inversion!
-            wind_low_mph=3.8,      # Looks calm and safe (3.8 mph)
+            t_ground_0m_f=54.0,   # Ground is coldest
+            t_low_f=58.2,         # 2m canopy
+            t_high_f=64.0,        # 80m aloft (+5.8°F)
+            t_120m_f=65.5,       # 120m aloft (+7.3°F)
+            t_180m_f=66.8,       # 180m aloft (+8.6°F)
+            wind_low_mph=3.8,     # Looks calm and safe (3.8 mph)
             wind_high_mph=4.5,
+            wind_120m_mph=5.2,
+            wind_180m_mph=6.0,
             dir_low_deg=310.0,
             dir_high_deg=315.0,
+            dir_120m_deg=320.0,
+            dir_180m_deg=325.0,
             rh_low=35.0,
             solar_rad_w_m2=0.0
         )
     },
     "marana_wind_shear": {
-        "name": "Marana / Pima Katabatic Wind Shear",
-        "description": "Mountain drainage winds produce 15.2 mph shear aloft divergent by 75° from ground breeze, risking herbicide drift into an adjacent 40-acre certified organic block.",
+        "name": "Marana / Pima Katabatic Multi-Tier Wind Shear",
+        "description": "Tortolita Mountain drainage produces 21.0 mph wind aloft divergent by 90° from the 4.8 mph ground breeze, ripping pesticide droplets out of the canopy into adjacent organic blocks.",
         "reading": TowerReading(
             timestamp=datetime.utcnow(),
             location_name="UofA Marana Ag Center (Avra Valley)",
             lat=32.4380,
             lon=-111.2280,
             elevation_ft=1980.0,
+            t_ground_0m_f=67.0,
             t_low_f=66.0,
             t_high_f=65.0,
-            wind_low_mph=4.8,      # Safe ground wind
-            wind_high_mph=15.2,    # High aloft wind shear
-            dir_low_deg=270.0,     # West
-            dir_high_deg=195.0,    # South-Southwest (75° shear)
+            t_120m_f=64.2,
+            t_180m_f=63.5,
+            wind_low_mph=4.8,     # Safe ground wind
+            wind_high_mph=14.5,   # Aloft shear
+            wind_120m_mph=17.8,   # Mid-aloft shear
+            wind_180m_mph=21.0,   # High aloft jet
+            dir_low_deg=270.0,    # West ground breeze
+            dir_high_deg=210.0,   # SSW aloft
+            dir_120m_deg=195.0,   # SSW aloft
+            dir_180m_deg=180.0,   # South aloft (90° shear!)
             rh_low=20.0,
             solar_rad_w_m2=600.0
         )
     },
+    "yuma_elevated_cap": {
+        "name": "Yuma Mesa Elevated Inversion Lid (Ground Station Blind Spot)",
+        "description": "Surface station reports normal lapse (-1.5°F at 80m), misleading standard tools. However, a warm subsidence cap at 120m-180m (+6.0°F) traps rising chemical plumes and transports them downwind.",
+        "reading": TowerReading(
+            timestamp=datetime.utcnow(),
+            location_name="Yuma Mesa Citrus/Vegetable Block",
+            lat=32.6100,
+            lon=-114.6200,
+            elevation_ft=210.0,
+            t_ground_0m_f=71.0,
+            t_low_f=70.0,         # 2m canopy
+            t_high_f=68.5,        # 80m looks normal (-1.5°F lapse)
+            t_120m_f=73.0,       # 120m warm cap (+4.5°F over 80m!)
+            t_180m_f=74.5,       # 180m synoptic lid
+            wind_low_mph=5.0,
+            wind_high_mph=6.2,
+            wind_120m_mph=8.5,
+            wind_180m_mph=11.0,
+            dir_low_deg=300.0,
+            dir_high_deg=310.0,
+            dir_120m_deg=330.0,
+            dir_180m_deg=345.0,
+            rh_low=22.0,
+            solar_rad_w_m2=450.0
+        )
+    },
     "yuma_ideal_window": {
         "name": "Yuma Mid-Morning Ideal Spray Window",
-        "description": "Desert sun has completely dissipated the river basin inversion. 5.5 mph steady wind with normal lapse rate (-2.5°F).",
+        "description": "Desert sun has completely dissipated all inversion layers. Steady 5.5 mph breeze with consistent adiabatic lapse rate through all heights.",
         "reading": TowerReading(
             timestamp=datetime.utcnow(),
             location_name="Yuma Mesa Citrus/Melon Block",
             lat=32.6100,
             lon=-114.6200,
             elevation_ft=210.0,
+            t_ground_0m_f=76.0,
             t_low_f=72.0,
-            t_high_f=69.5,        # Normal lapse rate (cooler aloft)
-            wind_low_mph=5.5,      # Perfect 3-8 mph window
+            t_high_f=69.5,        # Normal lapse rate
+            t_120m_f=68.0,        # Consistent cooling aloft
+            t_180m_f=66.5,        # Consistent cooling aloft
+            wind_low_mph=5.5,     # Perfect 3-8 mph window
             wind_high_mph=6.8,
+            wind_120m_mph=7.2,
+            wind_180m_mph=7.5,
             dir_low_deg=340.0,
             dir_high_deg=345.0,
+            dir_120m_deg=345.0,
+            dir_180m_deg=350.0,
             rh_low=22.0,
             solar_rad_w_m2=750.0
         )
@@ -652,20 +1029,25 @@ def get_scenario(key: str) -> TowerReading:
 
 ---
 
-### 4.6. FastAPI Server with GeoJSON Endpoints (`app/main.py`)
+### 4.6. FastAPI Server with Multi-Height Endpoints (`app/main.py`)
 ```python
 from fastapi import FastAPI, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from app.schemas import (
-    Assessment, TowerReading, ChemicalProduct, TeeJetNozzleType, POPULAR_PRODUCTS
+    Assessment, TowerReading, ChemicalProduct, TeeJetNozzleType,
+    HeightProfile, MultiHeightInversionAnalysis, POPULAR_PRODUCTS
 )
-from app.rules import assess_drift_risk
+from app.rules import assess_drift_risk, analyze_multi_height_profile
 from app.sources.openmeteo import fetch_openmeteo_live, LOCATIONS
 from app.sources.simulator import SCENARIOS, get_scenario
 from app.forecast.model import SprayRiskForecaster
 from app.store import record_assessment, get_recent_logs, export_csv
 
-app = FastAPI(title="CanopyGuard Pro — Arizona Weather Intelligence API", version="1.1.0")
+app = FastAPI(
+    title="CanopyGuard Pro — Multi-Height Weather Intelligence API",
+    description="Precision microclimate, thermal inversion drift detection, and spatial plume modeling for South Arizona agriculture.",
+    version="1.2.0"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -716,10 +1098,15 @@ def get_assessment(
     product_id: str = Query("radiant", enum=["radiant", "prefar"]),
     nozzle: TeeJetNozzleType = Query(TeeJetNozzleType.MEDIUM),
     boom_height_in: int = 24,
+    t_ground_0m: float = 62.0,
     t_low: float = 64.0,
     t_high: float = 62.0,
+    t_120m: float = 61.5,
+    t_180m: float = 60.5,
     w_low: float = 4.5,
-    w_high: float = 6.0
+    w_high: float = 6.0,
+    w_120m: float = 7.0,
+    w_180m: float = 7.5
 ) -> Assessment:
     prod = POPULAR_PRODUCTS.get(product_id, POPULAR_PRODUCTS["radiant"])
     
@@ -730,11 +1117,16 @@ def get_assessment(
         reading = get_scenario(scenario_id)
     else:
         reading = TowerReading(
+            t_ground_0m_f=t_ground_0m,
             t_low_f=t_low,
             t_high_f=t_high,
+            t_120m_f=t_120m,
+            t_180m_f=t_180m,
             wind_low_mph=w_low,
             wind_high_mph=w_high,
-            location_name="Manual Scrubber Reading",
+            wind_120m_mph=w_120m,
+            wind_180m_mph=w_180m,
+            location_name="Manual Multi-Height Scrubber Reading",
             lat=32.7130,
             lon=-114.7000
         )
@@ -742,6 +1134,38 @@ def get_assessment(
     assessment = assess_drift_risk(reading, prod, nozzle, boom_height_in)
     record_assessment(assessment)
     return assessment
+
+@app.get("/assess/profile")
+def get_profile(
+    source: str = Query("live", enum=["live", "scenario", "custom"]),
+    location_id: str = Query("yuma_valley"),
+    scenario_id: str = Query("yuma_radiation_inversion"),
+    t_ground_0m: float = 62.0,
+    t_low: float = 64.0,
+    t_high: float = 62.0,
+    t_120m: float = 61.5,
+    t_180m: float = 60.5
+):
+    if source == "live":
+        loc = LOCATIONS.get(location_id, LOCATIONS["yuma_valley"])
+        reading = fetch_openmeteo_live(loc["lat"], loc["lon"], loc["name"])
+    elif source == "scenario":
+        reading = get_scenario(scenario_id)
+    else:
+        reading = TowerReading(
+            t_ground_0m_f=t_ground_0m,
+            t_low_f=t_low,
+            t_high_f=t_high,
+            t_120m_f=t_120m,
+            t_180m_f=t_180m,
+            wind_low_mph=5.0,
+            wind_high_mph=6.0
+        )
+    profile, analysis = analyze_multi_height_profile(reading)
+    return {
+        "profile": profile,
+        "analysis": analysis
+    }
 
 @app.get("/map/parcels")
 def list_parcels():
