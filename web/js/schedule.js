@@ -47,9 +47,9 @@ export async function renderSchedule(root) {
 
     <section class="panel" aria-labelledby="g-h">
       <div class="section-title"><h2 id="g-h">Timeline</h2>
-        <div class="legend"><span><i style="background:repeating-linear-gradient(135deg,#DCE6DE 0 4px,#EDF2EE 4px 8px);border:1px solid #A9C7B2"></i>Travel + setup</span>
-          <span><i style="background:#23513B"></i>Application</span><span><i style="background:#DCE7F1;border:1px solid #A8C1D8"></i>Rain-free interval</span>
-          <span><i style="background:#8DBE9D"></i>Field slot without blocking flags</span><span><i style="border-left:2px dashed #B42318;border-radius:0;width:2px"></i>Deadline</span></div></div>
+        <div class="legend"><span><i class="lg prep"></i>Travel + setup</span>
+          <span><i class="lg app"></i>Application</span><span><i class="lg rain"></i>Rain-free interval</span>
+          <span><i class="lg slot"></i>Field slot without blocking flags</span><span><i class="lg dl"></i>Deadline</span></div></div>
       ${gantt(plan, tls)}
     </section>
 
@@ -125,7 +125,7 @@ function gantt(plan, tls) {
   const rainRow = (() => {
     const rs = state.plan && (Object.values(tls)[0]?.rain || []).filter((p) => p.time >= start && p.time < end);
     return `<div class="g-lane" style="min-height:34px"><div class="lbl small">Rain probability<div class="xs muted">simulated forecast</div></div>
-      <div class="track" style="display:grid;grid-auto-flow:column;grid-auto-columns:1fr;align-items:end">${rs.map((p) => `<span title="${when(p.time)}: ${p.prob_pct}%" style="height:${Math.max(2, p.prob_pct * 0.3)}px;background:${p.prob_pct >= 40 ? '#2F5E86' : '#A8C1D8'};margin:0 1px"></span>`).join('')}</div></div>`;
+      <div class="track" style="display:grid;grid-auto-flow:column;grid-auto-columns:1fr;align-items:end">${rs.map((p) => `<span title="${when(p.time)}: ${p.prob_pct}%" style="height:${Math.max(2, p.prob_pct * 0.3)}px;background:${p.prob_pct >= 40 ? 'var(--marker-blue)' : 'color-mix(in srgb, var(--marker-blue) 35%, transparent)'};margin:0 1px"></span>`).join('')}</div></div>`;
   })();
   return `<div class="gantt" role="region" aria-label="Schedule timeline" tabindex="0"><div class="gantt-inner">${axis}${lanes}${rainRow}</div></div>
     <p class="xs muted" style="margin-top:6px">Shaded green slots have no blocking flags for that field. A job also needs its whole duration, travel, setup, crew shift and rain-free interval to fit.</p>`;

@@ -8,6 +8,8 @@ import { renderRecords } from './records.js';
 const VIEWS = { today: renderToday, map: renderMap, schedule: renderSchedule, records: renderRecords };
 const TITLES = { today: 'Today', map: 'Field map', schedule: 'Schedule', records: 'Records' };
 const main = document.getElementById('main');
+// Views drawn in the lineup-board theme with the blurred field backdrop (not the map).
+const BOARD = new Set(['today', 'schedule', 'records']);
 let current = null;
 
 function parse() {
@@ -25,6 +27,8 @@ async function route() {
   });
   document.title = `${TITLES[r]} · CanopyGuard`;
   document.body.classList.toggle('on-map', r === 'map');
+  document.body.classList.toggle('on-today', r === 'today');
+  document.body.classList.toggle('cg-board', BOARD.has(r));
   closeExplain();
   await VIEWS[r](main, params);
   emit('route');
