@@ -28,6 +28,7 @@ Paired-height sensing (5 ft and 30 ft) catches surface inversions that a single 
 
 - Decision support only. It does not diagnose pests, choose pesticides, recommend rates, predict drift, or control equipment. "Go" means no configured flags were detected, not guaranteed safety.
 - Statuses: Go, Caution, Stop, Insufficient data. Missing or stale data is never Go.
+- The ML drift-flag outlook (`app/forecast.py`) is advisory: a calibrated probability of a Stop-level flag 1-12 h ahead, trained on simulated weather. It never sets or clears the current status.
 - All fields, growers, sensors, neighbors and product constraints are fictional or simulated and must stay labeled that way.
 
 ## Evidence on Hand

@@ -1,7 +1,7 @@
 import { state, api, chip, esc, icon, when, hm, fieldName, stateBox, toast } from './core.js';
 
 const KINDS = { '': 'All', assessment: 'Assessments', alert: 'Alerts', ack: 'Acknowledgements', schedule: 'Schedule revisions',
-  equipment: 'Equipment', request: 'Requests', area: 'Areas', scenario: 'Scenario', config: 'Settings' };
+  equipment: 'Equipment', request: 'Requests', area: 'Areas', scenario: 'Scenario', config: 'Settings', forecast: 'ML forecasts' };
 let filter = '';
 
 export async function renderRecords(root) {

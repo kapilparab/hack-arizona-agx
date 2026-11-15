@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Body
 from fastapi.responses import Response, FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app import catalog, demo_data, engine, equipment, explain, regional, scheduler, store, terrain, realdata, measure, profile
+from app import catalog, demo_data, engine, equipment, explain, forecast, regional, scheduler, store, terrain, realdata, measure, profile
 from app.geo import ring_lonlat, centroid as geo_centroid, to_lonlat
 import numpy as np
 from app.config import DEFAULT_THRESHOLDS, MST, RULE_VERSION, thresholds
@@ -597,6 +597,41 @@ def add_observation(body: dict = Body(...)):
                  ", ".join(f"{k.replace('_', ' ')}={v}" for k, v in items.items() if v != "not_checked") or "nothing checked",
                  o, field_id=f["id"], scenario_time=o["scenario_time"], simulated=False)
     return {"id": oid, **o}
+
+
+# ---------------------------------------------------------------- forecast
+forecast.warm()  # train in the background at startup (~2 s)
+_FCST_LOGGED = set()
+
+
+@app.get("/api/forecast/model")
+def forecast_model():
+    m = forecast.model()
+    return {"model": m.info, "skill": m.metrics}
+
+
+@app.get("/api/forecast")
+def get_forecast(field_id: str, time: str | None = None, horizon_h: int = 12):
+    f = _field(field_id)
+    at = SCENARIO.floor_slot(_t(time))
+    if not f["sensor_id"]:
+        m = forecast.model()
+        return {"field_id": field_id, "status": "not_assessed", "hours": [], "window": None, "warning": None,
+                "model": m.info, "skill": m.metrics,
+                "message": "No paired-height sensor covers this field, so no forecast can be issued."}
+    r = forecast.forecast(SCENARIO, f["sensor_id"], at, STATE["overrides"], max(1, min(12, horizon_h)))
+    r["field_id"] = field_id
+    key = (field_id, r["issued_at"])
+    if r.get("hours") and key not in _FCST_LOGGED:
+        _FCST_LOGGED.add(key)
+        w = r["window"]
+        summary = (f"ML outlook for {f['name']} issued {r['issued_at'][11:16]}: " +
+                   (f"next likely window {w['start'][11:16]}-{w['end'][11:16]} (P(flag) <= {w['max_p']:.0%})" if w else "no low-probability window in the next 12 h") +
+                   (f"; warning: {r['warning']['text']}" if r.get("warning") else ""))
+        store.record("forecast", summary, {"model_version": forecast.MODEL_VERSION, "inputs": r["inputs"], "hours": r["hours"],
+                                           "window": w, "warning": r.get("warning")},
+                     field_id=field_id, scenario_time=r["issued_at"])
+    return r
 
 
 # keep the static mount last so API routes registered above take precedence

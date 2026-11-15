@@ -380,3 +380,19 @@ body.cg-board .legend i.lg { display: inline-block; width: 14px; height: 10px; m
   body.cg-board .panel { padding: 14px 12px 16px; margin-inline: -4px; }
 }
 body.cg-board main:focus-visible { outline: none; }
+
+/* ML drift-flag outlook */
+.outlook .fc-row { margin-top: 14px; }
+.fc-bars { display: grid; grid-template-columns: repeat(12, 1fr); gap: 3px; height: 54px; align-items: end; margin-top: 6px;
+  border-bottom: 1.5px solid var(--ink-3); }
+.fc-bar { display: block; height: calc(var(--p) * 100%); border-radius: 2px 2px 0 0; }
+.fc-bar.low, .sw.fc.low { background: var(--marker-green); }
+.fc-bar.moderate, .sw.fc.moderate { background: var(--amber-fill); }
+.fc-bar.high, .sw.fc.high { background: repeating-linear-gradient(135deg, var(--marker-red) 0 3px, color-mix(in srgb, var(--marker-red) 70%, transparent) 3px 6px); }
+.fc-axis { display: flex; justify-content: space-between; font-size: .72rem; color: var(--ink-3); margin-top: 3px; }
+.fc-skill { margin-top: 12px; }
+.fc-skill summary { cursor: pointer; color: var(--marker-blue); font-weight: 600; }
+.fc-skill p { margin-top: 8px; max-width: 60ch; }
+.fc-rel { margin-top: 8px; font-size: .78rem; border-collapse: collapse; }
+.fc-rel th, .fc-rel td { padding: 2px 10px 2px 0; text-align: left; }
+.fc-rel th { color: var(--ink-3); font-weight: 600; }

@@ -22,7 +22,7 @@ Open http://127.0.0.1:8000. For a phone on the same network, open `http://<your-
 - **Replay demo** on the Today page resets requests, alerts and scenario events.
 - MapLibre is vendored in `web/vendor`. Fonts, basemap tiles and terrain load from the internet. Offline, the map still draws the fictional overlays on a plain background. If WebGL is unavailable, a 2D SVG schematic is used.
 
-Tests: `.venv/Scripts/python -m pytest -q` (50 tests).
+Tests: `.venv/Scripts/python -m pytest -q` (71 tests).
 
 Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic credentials (e.g. `ANTHROPIC_API_KEY`), then set `OBSERVAIR_AI=1`. Claude (`claude-opus-5-5`, server-side refusal fallback enabled) only rephrases the rule-based engine lines it is given. Any failure or refusal falls back to the rule-based text. The key stays on the server. **This path was not exercised during the build** (no credentials were configured); the rule-based path is what the demo uses and what was tested.
 
@@ -30,7 +30,7 @@ Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic c
 
 | Area | Contents |
 |---|---|
-| **Today** | Next proposed job with depart/travel/setup times, deadlines and conflicts, unscheduled jobs with the reason, fields needing attention (including "ground-only would say Go" blind spots), treatment requests, and candidate weather windows for today and tomorrow. |
+| **Today** | Next proposed job with depart/travel/setup times, deadlines and conflicts, unscheduled jobs with the reason, fields needing attention (including "ground-only would say Go" blind spots), treatment requests, and candidate weather windows for today and tomorrow, and an ML drift-flag outlook (hourly probability of a Stop-level flag for the next 12 h, likely window, turning-bad warning). |
 | **Field map** | Desktop: fields and equipment on the left, map in the center, status and explanation on the right, time slider and replay at the bottom. Mobile: full-width map, status strip, bottom nav, and a draggable bottom sheet (Status / Setup / Time / Explain). Separate layers for decision status, inversion ΔT, interpolated temperature (5 ft or 30 ft), wind at both heights, sensitive areas and exclusions, and application passes. 2D/3D toggle with real DEM terrain at 1× scale. Mark sensitive areas or exclusions by clicking corners. |
 | **Schedule** | Proposed order compared with the request order, a lane timeline (travel+setup, application, rain-free interval, deadline, suitable slots), a rain-probability strip, unscheduled jobs, and a request editor. |
 | **Records** | Grouped alerts with operator acknowledgement, a filterable log (readings, triggered rules, equipment configs, schedule revisions, alerts, acks, areas, settings), CSV export, and an optional live regional context panel. |
@@ -135,7 +135,7 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
 - **Wind:** FAO-56 logarithmic profile (d = ⅔h, z₀m = 0.123h), fitted through the measured level or levels. It is flagged unreliable whenever an inversion is flagged, because the log law assumes neutral stability.
 - These estimates are context only. Go/Stop still uses measured values.
 - **Model profiles** (HRRR native levels at their real heights above model ground) get layer lapse rates, inverted layers, inversion top and regime. The panel states that the lowest level (~10 m) cannot resolve a 6 in–10 ft inversion.
-- **Not taken from that branch:** the soil "skin" temperature (not air temperature), EPA compliance wording, and the ML forecaster with unvalidated skill.
+- **Not taken from that branch:** the soil "skin" temperature (not air temperature), and EPA compliance wording. The ML forecaster was later rebuilt with measured, held-out skill (see *Calibrated ML drift-flag forecaster*).
 
 ### Nozzle candidates — Implemented, source-limited (`app/nozzles.py`)
 - **Required flow per nozzle** = GPA × MPH × spacing (in) ÷ 5940, from the TeeJet guide (li-tj416, p. 94).
@@ -225,6 +225,19 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
   - Prototype ranking: fully documented first, then no failed checks, then the least extra coarseness above the requirement (coarser is not assumed better), then pressure margin.
   - Release height is checked against TeeJet's documented 20 in for 110° tips at 20 in spacing.
 
+### Calibrated ML drift-flag forecaster — Implemented, trained on simulated data (`app/forecast.py`)
+
+Adapted from the backend-implementation branch's HistGradientBoosting forecaster, rebuilt so every skill number is measured rather than asserted.
+
+- **Predicts** the probability that a Stop-level drift flag (inversion beyond combined sensor uncertainty, or lower wind outside the configured window, i.e. the engine's own thresholds) is present 1-12 h ahead at a paired-height mast.
+- **Features** known at issue time only: current and 1-h-old ΔT and lower wind, upper-minus-lower wind (missing allowed), hour of day, lead time, target hour, flag now. A test confirms future scenario readings cannot change a forecast.
+- **Training data:** a stochastic paired-height weather generator (per-day inversion strength, burn-off and onset times, daytime lapse, night wind, afternoon wind peak, AR(1) noise, gust bursts, sensor noise). 300 training days, 60 calibration days, 60 held-out test days. Trains in about 2 s at startup.
+- **Model:** `HistGradientBoostingClassifier` + isotonic calibration on the calibration days.
+- **Held-out skill:** Brier 0.144 vs 0.219 for conditional persistence and 0.182 for hourly climatology (34% and 21% better); mean calibration error about 1.6 percentage points. The reliability table is shown in the UI.
+- **UI:** Today → "Drift-flag outlook": hourly bars per field, the next likely low-risk window, and a "turning bad within 3 h" warning. Each issued outlook is logged to Records (`forecast`).
+- **API:** `GET /api/forecast?field_id=A[&time=...]`, `GET /api/forecast/model`.
+- **Limits:** advisory only; it never changes the current Go/Caution/Stop status. Skill on real masts is unknown until validated on observed data. It does not know about products, neighbors or rain.
+
 ### Final checklist
 
 | State | Items |
@@ -245,7 +258,7 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
 
 ## Three-minute demo script
 
-1. **(0:00) Today.** "Four requests came in from the PCA and the spray program. Broccoli Field B must be done by 10:00." Point to the next proposed job (Field B, 06:15) and the line saying the request order would leave B unscheduled.
+1. **(0:00) Today.** "Four requests came in from the PCA and the spray program. Broccoli Field B must be done by 10:00." Point to the next proposed job (Field B, 06:15) and the line saying the request order would leave B unscheduled. In the side column, the **Drift-flag outlook** shows Field A's inversion likely persisting until about 08:30 and a likely window from 09:30; open *How good is this forecast?* for the held-out Brier scores against persistence and climatology.
 2. **(0:30) Blind spot.** Under *Fields needing attention*, Field A shows Stop with "A 5 ft station alone would say Go." Click **Open map**, select Field A. The right panel shows *5 ft station only: Go* vs *Paired 5 ft + 30 ft: Stop*. The cross-section shows 30 ft is +3.9 °F warmer: an inversion lid.
 3. **(1:00) Neighbors and wind.** Wind arrows point where air moves *to*. Air is moving south toward the fictional organic block (N1), which has a user-entered hold constraint. Show the Neighbors explanation, and note it is an attention check, not an exposure prediction.
 4. **(1:30) Equipment.** In Setup, switch to **Agricultural spray drone**. A blocking conflict appears: the product's ASABE Medium-or-coarser requirement can't be verified from a µm atomizer setting. Switch back to the boom; the weather Stop is still there because equipment can't clear an inversion. Open *Compare nozzles*: candidates come from the TeeJet XR, AIXR and TTI tables with their sources, ranked by the stated prototype rule.
@@ -294,7 +307,7 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
 - Every reading carries its own observation timestamp, and staleness is evaluated against the viewed time. The scenario date is anchored to the server's Arizona date at startup, so restart the server on a new day.
 
 **Omitted:**
-- the HistGradientBoosting forecaster;
+- the HistGradientBoosting forecaster as written (hardcoded skill figure, no calibration); it was rebuilt in `app/forecast.py`;
 - ntfy.sh push notifications;
 - Pydantic response models (plain dicts are returned);
 - the Marana katabatic scenario.
@@ -304,6 +317,7 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
 - **No field validation.** Durations, travel times and thresholds are planning estimates from operator inputs and prototype assumptions.
 - **Not verified:** manufacturer nozzle droplet tables and DJI T50 specifications (see above). No nozzle is recommended for that reason.
 - No AZMET or NWS integration. No real sensor ingestion: the paired-height data is simulated.
+- The ML drift-flag forecaster is trained and scored on simulated weather only. Its skill on real masts is unknown until it is validated against observed paired-height data.
 - The optional Claude explanation path was not run (no credentials). Spanish UI covers explanations, status labels and a few headings, not every label.
 - Not built: aircraft planning and chemigation (shown as unsupported), and airblast canopy/airflow modeling (links to the UC Airblast Spray Advisor).
 - Records are append-only in the app's code paths, but SQLite itself is not tamper-proof.
