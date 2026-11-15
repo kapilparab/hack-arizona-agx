@@ -22,7 +22,7 @@ Open http://127.0.0.1:8000. For a phone on the same network, open `http://<your-
 - **Replay demo** on the Today page resets requests, alerts and scenario events.
 - MapLibre is vendored in `web/vendor`. Fonts, basemap tiles and terrain load from the internet. Offline, the map still draws the fictional overlays on a plain background. If WebGL is unavailable, a 2D SVG schematic is used.
 
-Tests: `.venv/Scripts/python -m pytest -q` (71 tests).
+Tests: `.venv/Scripts/python -m pytest -q` (87 tests).
 
 Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic credentials (e.g. `ANTHROPIC_API_KEY`), then set `OBSERVAIR_AI=1`. Claude (`claude-opus-5-5`, server-side refusal fallback enabled) only rephrases the rule-based engine lines it is given. Any failure or refusal falls back to the rule-based text. The key stays on the server. **This path was not exercised during the build** (no credentials were configured); the rule-based path is what the demo uses and what was tested.
 
@@ -225,6 +225,38 @@ This ports the useful part of the `backend-implementation` branch: multi-height 
   - Prototype ranking: fully documented first, then no failed checks, then the least extra coarseness above the requirement (coarser is not assumed better), then pressure margin.
   - Release height is checked against TeeJet's documented 20 in for 110° tips at 20 in spacing.
 
+### Scenario library — Implemented, simulated (`app/scenario.py`)
+
+Adapted from the backend-implementation branch's scenario set. Switch under **Prototype controls → Simulation → Scenario**, or `POST /api/scenario/select {"id": ...}` (`GET /api/scenarios` lists them). Switching restores requests, alerts and thresholds, moves the clock to the scenario's start, recalculates the plan, and is logged to Records.
+
+| ID | Starts | What it shows | Field A (mast S1) at start |
+|---|---|---|---|
+| `yuma-dawn-inversion` (default) | 05:30 | Inversion blind spot: 30 ft is +3.9 °F warmer than 5 ft, 5 ft wind inside the window | Stop; a single low station says Go |
+| `katabatic-shear` | 05:30 | Cold drainage from the NE at 5 ft (~5 mph) under a 12-13 mph SW flow at 30 ft; no inversion | Caution for speed and direction shear; a single low station says Go |
+| `evening-onset` | 17:00 | Mixed air and wind in the window now; an inversion forms after sunset | Go now; the ML outlook warns "likely to turn bad by 19:00" |
+| `well-mixed` | 05:30 | Steady 5-8 mph breeze, upper air cooler all day | Go: the tool does not always say Stop |
+
+Shear is visible only on mast S1, which has wind at both heights; S2 has one anemometer. All four scenarios are simulated keyframes, not recorded weather. Tests check each scenario's stated status at its start time.
+
+### Product risk factors — Implemented, fictional products (`app/catalog.py`, `app/engine.py`)
+
+Adapted from the backend-implementation branch's product taxonomy (systemic vs contact, category), plus volatility (a challenge stretch goal). Each fictional product now carries **category**, **mode of action**, **volatility** (low / moderate / high) and **off-target hazard**, each with its source. These properties only **tighten** the weather checks; a test confirms a volatile or high-hazard product is never less restrictive than a low-volatility one.
+
+| Product (fictional) | Type | Volatility | Off-target hazard |
+|---|---|---|---|
+| Demo Insecticide R | Insecticide · contact | Low | Moderate |
+| Demo Herbicide H | Herbicide · systemic | Moderate | High |
+| Demo Growth-Regulator Herbicide G (new) | Herbicide · systemic | High | High |
+| Operator product | Not entered | Not entered (Caution: adjustments not applied) | Not entered |
+
+Rules (prototype assumptions; the temperature limits are adjustable thresholds in Prototype controls, and the label always wins):
+- **Heat and volatility:** high volatility gives Caution from 80 °F and Stop from 90 °F air temperature at the lower sensor; moderate gives Caution from 90 °F. Volatility rises with temperature (EPA, *Reducing Pesticide Drift*).
+- **Weak inversion:** with a moderate or high-volatility product, a possible inversion inside sensor uncertainty is raised from Caution to Stop, because vapor can stay in a stable layer and move after application.
+- **Inversion developing:** with a volatile product, a developing or strengthening inversion trend adds Caution: spraying should finish well before the inversion forms.
+- **Sensitive crops:** with a high off-target-hazard product, air moving toward a nearby sensitive crop is raised from Caution to Stop.
+
+The scheduler uses the same checks, so the selected product changes the planned windows. Pick a product in **Schedule → request editor** (the list shows volatility). The field panel's *Spray liquid* card shows the product's type, volatility, hazard and the adjustments that apply. Example: in the *Warning before conditions turn bad* scenario at 18:00, Field A is Caution with Insecticide R (+0.3 °F, inside uncertainty) but Stop with Herbicide G. The November scenarios stay below 80 °F, so the heat rules are visible only by lowering the threshold or in tests.
+
 ### Calibrated ML drift-flag forecaster — Implemented, trained on simulated data (`app/forecast.py`)
 
 Adapted from the backend-implementation branch's HistGradientBoosting forecaster, rebuilt so every skill number is measured rather than asserted.
@@ -264,6 +296,7 @@ Adapted from the backend-implementation branch's HistGradientBoosting forecaster
 4. **(1:30) Equipment.** In Setup, switch to **Agricultural spray drone**. A blocking conflict appears: the product's ASABE Medium-or-coarser requirement can't be verified from a µm atomizer setting. Switch back to the boom; the weather Stop is still there because equipment can't clear an inversion. Open *Compare nozzles*: candidates come from the TeeJet XR, AIXR and TTI tables with their sources, ranked by the stated prototype rule.
 5. **(2:00) Reorder.** Open **Schedule**. Request order A → B → C leaves B unscheduled. Proposed B → A → C runs B at 06:15, then A after its inversion breaks (08:45–09:40), and C moves to tomorrow. Its blue bar is the 4 h rain-free interval that would overlap the simulated 15:00 showers today. Click **Why this order?** and toggle **ES**.
 6. **(2:30) Monitoring and record.** On the map with Field A, open **Prototype controls → Simulation**, press **Play**, then **Simulate critical change**. The vehicle pauses, the active pass turns red, and one grouped alert appears. Enter a name and **Acknowledge**. After conditions improve, the alert stays active for one clean check and clears on the second. Record a field observation (e.g. dust hanging) in the status panel: it adds Caution and never clears a flag. Open **Schedule → Before each planned job** for the decision ID, rain and surface concerns, and pre-application checks. Open **Records**: the alert, acknowledgement, schedule revisions, rule version and *Simulated* flag are there. **Export CSV**.
+7. **(If time) Other scenarios.** In **Prototype controls → Simulation → Scenario**, pick *Wind shear between heights*: Field A turns Caution for 5 ft vs 30 ft speed and direction differences while a single low station still says Go. Pick *Warning before conditions turn bad* (17:00): status is Go now, but the outlook warns an inversion is likely by 19:00.
 
 ## Sources and assumptions
 
@@ -289,13 +322,13 @@ Adapted from the backend-implementation branch's HistGradientBoosting forecaster
 - the paired-reading schema idea (lower/upper temperature, wind, direction);
 - `angle_diff` circular direction difference;
 - the ground-only vs multi-height comparison and "blind spot" concept;
-- scripted scenario pattern (Yuma dawn inversion);
+- scripted scenario pattern (Yuma dawn inversion), later extended into a scenario library with the katabatic-shear and clean-window cases;
 - SQLite logging with CSV export;
 - Yuma-area setting;
 - 20/40/60/80-acre parcel sizes.
 
 **Corrected:**
-- The hardcoded "38.4 % Brier improvement" and calibrated-probability claims were removed. The timeline is a labeled simulated scenario; there is no trained model.
+- The hardcoded "38.4 % Brier improvement" and calibrated-probability claims were removed. The timeline is a labeled simulated scenario. A trained forecaster was later added with measured, held-out skill (`app/forecast.py`).
 - `calculate_drift_distance` and the drift cone with its "EPA AgDRIFT" attribution were removed. No plume, drift distance or "protected" claim is drawn.
 - Open-Meteo 2 m/80 m and 10 m/80 m values are no longer presented as 5 ft/30 ft tower readings. The required paired-height data comes from separately labeled simulated masts.
 - Fabricated offline fallbacks and default values were replaced with explicit unavailable/stale/insufficient states.
@@ -310,7 +343,6 @@ Adapted from the backend-implementation branch's HistGradientBoosting forecaster
 - the HistGradientBoosting forecaster as written (hardcoded skill figure, no calibration); it was rebuilt in `app/forecast.py`;
 - ntfy.sh push notifications;
 - Pydantic response models (plain dicts are returned);
-- the Marana katabatic scenario.
 
 ## Not implemented or not validated
 

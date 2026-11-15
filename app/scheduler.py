@@ -15,7 +15,8 @@ NO_WINDOW = "No suitable window found before the requested deadline - review wit
 WEATHER_IDS = {"inversion", "speed_shear", "dir_shear", "inversion_persistence"}
 CAUSE_LABEL = {
     "inversion": "temperature inversion", "wind_low": "wind below minimum", "wind_high": "wind above maximum",
-    "product_wind": "product wind limit", "data": "missing or insufficient sensor data", "speed_shear": "wind-speed change with height",
+    "product_wind": "product wind limit", "product_volatility": "volatile product in heat",
+    "product_vapor_window": "inversion developing after application (volatile product)", "data": "missing or insufficient sensor data", "speed_shear": "wind-speed change with height",
     "dir_shear": "wind-direction change with height", "neighbor": "sensitive-area constraint", "rain": "rain-free interval conflicts with forecast rain",
     "shift": "outside crew shift", "deadline": "would finish after the deadline", "horizon": "beyond the scenario horizon",
 }

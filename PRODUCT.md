@@ -30,6 +30,7 @@ Paired-height sensing (5 ft and 30 ft) catches surface inversions that a single 
 - Statuses: Go, Caution, Stop, Insufficient data. Missing or stale data is never Go.
 - The ML drift-flag outlook (`app/forecast.py`) is advisory: a calibrated probability of a Stop-level flag 1-12 h ahead, trained on simulated weather. It never sets or clears the current status.
 - All fields, growers, sensors, neighbors and product constraints are fictional or simulated and must stay labeled that way.
+- Product risk factors (category, mode of action, volatility, off-target hazard) belong to fictional demo products and only tighten checks; they are not label values.
 
 ## Evidence on Hand
 

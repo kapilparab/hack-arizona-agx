@@ -159,7 +159,7 @@ function editor(root, job) {
       <div class="field"><label for="f-lc">Latest acceptable completion</label><input id="f-lc" name="latest_completion" type="datetime-local" value="${toLocal(j.latest_completion)}" required></div>
       <div class="field"><label for="f-pri">Priority</label><select id="f-pri" name="priority">${PRI.map((p) => `<option value="${p}" ${p === j.priority ? 'selected' : ''}>${PRI_L[p]}</option>`).join('')}</select></div>
       <div class="field"><label for="f-unit">Equipment and crew</label><select id="f-unit" name="unit_id">${state.catalog.units.map((u) => `<option value="${u.id}" ${u.id === j.unit_id ? 'selected' : ''}>${esc(u.name)} · ${esc(u.crew)}</option>`).join('')}</select></div>
-      <div class="field"><label for="f-prod">Operator-selected product</label><select id="f-prod" name="product_id">${Object.entries(state.catalog.products).map(([id, p]) => `<option value="${id}" ${id === j.product_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+      <div class="field"><label for="f-prod">Operator-selected product</label><select id="f-prod" name="product_id">${Object.entries(state.catalog.products).map(([id, p]) => `<option value="${id}" ${id === j.product_id ? 'selected' : ''}>${esc(p.name)}${p.constraints.volatility?.value ? ` · ${esc(p.constraints.volatility.value)} volatility` : ''}</option>`).join('')}</select>
         <span class="hint">Constraints come from the product entry; unknown values stay unknown.</span></div>
       <div class="field"><label for="f-dur">Job duration override (min)</label><input id="f-dur" name="duration_override_min" type="number" min="0" step="5" value="${esc(j.duration_override_min ?? '')}" placeholder="Estimate from equipment"></div>
     </div>

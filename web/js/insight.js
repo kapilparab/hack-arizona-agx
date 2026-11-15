@@ -200,12 +200,31 @@ export function liquidCard(job, ev, r) {
         <div><div class="k">Carrier volume</div><div class="v" style="font-size:1rem">${esc(carrier)}</div><div class="s">Water + product mix per area. Not a chemical dose.</div></div>
         <div><div class="k">Mix for this job</div><div class="v">${est ? esc(est.volume) : '—'}</div><div class="s">${est ? `${est.loads} tank load${est.loads > 1 ? 's' : ''} · ${dur(est.reload_min)} refilling` : ''}</div></div>
         <div><div class="k">Rain-free after last pass</div><div class="v">${rf.value != null ? rf.value + '<small> h</small>' : 'Unknown'}</div><div class="s">${esc(rf.source)}</div></div>
-        <div><div class="k">Air temperature range</div><div class="v" style="font-size:1rem">${tr.value ? `${tr.value[0]}–${tr.value[1]} °F` : 'Not entered'}</div><div class="s">${esc(tr.source)}</div></div>
+        <div><div class="k">Air temperature range</div><div class="v" style="font-size:1rem">${tr.value ? `${tr.value[0] ?? '–'}–${tr.value[1] ?? '–'} °F` : 'Not entered'}</div><div class="s">${esc(tr.source)}</div></div>
       </div>
+      ${riskProfile(c)}
       ${r?.scheduled ? `<p class="value-seq" style="margin-top:10px">${icon('schedule', 'sm')}<span>Planned ${esc(when(r.start))}–${hm(r.end)}. ${esc(r.rain_note || '')}</span></p>`
         : `<p class="value-seq" style="margin-top:10px">${icon('info', 'sm')}<span>No suitable window yet. The scheduler checks wind, temperature range and inversion every 15 min of the job, plus the rain-free interval after the last pass.</span></p>`}
       <p class="value-basis">Spraying time uses this carrier volume: total mix ÷ tank size gives refill stops, which are added to the path-based job time. Rates of chemical product are never prescribed.</p>
     </div></div>`;
+}
+
+// Product risk factors: properties that tighten the weather checks (never loosen them).
+const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : 'Not entered');
+function riskProfile(c) {
+  const v = (k) => c[k]?.value ?? null;
+  const vol = v('volatility'), haz = v('off_target_hazard');
+  const rules = [];
+  if (vol === 'high') rules.push(`Caution from ${state.meta.thresholds.vol_high_caution_temp_f.value} °F, Stop from ${state.meta.thresholds.vol_high_stop_temp_f.value} °F air temperature`);
+  if (vol === 'moderate') rules.push(`Caution from ${state.meta.thresholds.vol_moderate_caution_temp_f.value} °F air temperature`);
+  if (vol === 'high' || vol === 'moderate') rules.push('a possible weak inversion counts as Stop', 'Caution when an inversion is developing');
+  if (haz === 'high') rules.push('air moving toward a nearby sensitive crop counts as Stop');
+  return `<div class="value-grid risk-grid" style="margin-top:12px">
+      <div><div class="k">Type</div><div class="v" style="font-size:1rem">${esc(cap(v('category')))} · ${esc(cap(v('mode_of_action')))}</div><div class="s">${esc(c.mode_of_action?.source || 'Not entered')}</div></div>
+      <div><div class="k">Volatility</div><div class="v" style="font-size:1rem">${esc(cap(vol))}</div><div class="s">${esc(c.volatility?.source || 'Not entered')}</div></div>
+      <div><div class="k">Off-target hazard</div><div class="v" style="font-size:1rem">${esc(cap(haz))}</div><div class="s">${esc(c.off_target_hazard?.source || 'Not entered')}</div></div>
+    </div>
+    <p class="value-seq" style="margin-top:10px">${icon('caution', 'sm')}<span>${rules.length ? `Product risk adjustments: ${esc(rules.join('; '))}.` : vol == null ? 'Volatility not entered: vapor-drift adjustments are not applied (shown as Caution).' : 'No extra product adjustments: low volatility and no high off-target hazard.'} These only tighten checks.</span></p>`;
 }
 
 // ------------------------------------------------------------ terrain

@@ -278,6 +278,8 @@ def assess(reading: dict | None, at: datetime, field: dict | None = None, areas:
                                  "The inversion signal cleared in only one reading. It is not treated as gone until consecutive readings agree; sunrise or a forecast does not clear it.",
                                  blocking=False))
     metrics["trend_class"] = classify_trend(trend, metrics, t)
+    if product and not problems:
+        metrics["product_risk"] = product_risk(product, reading, metrics, t, checks)
     # Field observations: supporting evidence only. They can add caution, never clear a flag.
     for o in observations or []:
         signs = [k for k in ("dust_suspended", "smoke_layer", "fog", "dew", "frost") if o.get("items", {}).get(k) == "yes"]
@@ -292,8 +294,17 @@ def assess(reading: dict | None, at: datetime, field: dict | None = None, areas:
                                  "The observer reported variable local wind; direction-based checks may be unreliable.", blocking=False))
 
     nb = neighbors(field, list(areas), None if problems else reading, t, product) if field else []
+    hazard = ((product or {}).get("constraints", {}).get("off_target_hazard") or {}).get("value")
     for n in nb:
-        if n["blocking"]:
+        if not n["blocking"] and n["attention"] and hazard == "high" and n.get("kind") == "neighbor_crop":
+            checks.append(_check(f"neighbor_{n['area_id']}", "Sensitive crop + high off-target hazard", STOP, n["name"],
+                                 "Hold while air moves toward a sensitive crop with a high-hazard product",
+                                 product["constraints"]["off_target_hazard"]["source"],
+                                 f"Air is moving toward {n['name']} ({n['distance_ft']} ft away) and the selected product has a high off-target "
+                                 "hazard (systemic herbicide). Small amounts can injure a sensitive crop, so attention is raised to Stop."))
+            metrics.setdefault("product_risk", {}).setdefault("adjustments", []).append(
+                f"Nearby sensitive crop ({n['name']}) raised from Caution to Stop: high off-target hazard.")
+        elif n["blocking"]:
             checks.append(_check(f"neighbor_{n['area_id']}", "Sensitive area constraint", STOP, n["name"],
                                  "Hold while air moves toward area", (n["constraint"] or {}).get("source", ""),
                                  f"Air is moving toward {n['name']} ({n['distance_ft']} ft away), and a constraint holds application in that case."))
@@ -323,6 +334,51 @@ def assess(reading: dict | None, at: datetime, field: dict | None = None, areas:
                        "averaging": (reading or {}).get("averaging"), "gust_interval": (reading or {}).get("gust_interval"),
                        "shielding": (reading or {}).get("shielding"), "timezone": "MST (UTC-7)"},
     }
+
+
+def product_risk(product: dict, reading: dict, metrics: dict, t: dict, checks: list) -> dict:
+    """Product properties that tighten weather checks. Never loosens a flag (prototype rules,
+    thresholds in config with their sources). Mutates `checks`; returns a summary for the UI."""
+    pc = product["constraints"]
+    val = lambda k: (pc.get(k) or {}).get("value")
+    src = lambda k: (pc.get(k) or {}).get("source", "Not entered")
+    vol, moa, haz, cat = val("volatility"), val("mode_of_action"), val("off_target_hazard"), val("category")
+    adj = []
+    if vol is None:
+        checks.append(_check("product_volatility", "Product volatility", CAUTION, "Not entered", "Low / moderate / high", src("volatility"),
+                             "Product volatility not entered - vapor-drift adjustments were not applied.", blocking=False))
+    else:
+        T = reading["lower"]["temp_f"]
+        lab = temp_label(reading["lower"])
+        if vol == "high" and T >= t["vol_high_stop_temp_f"]:
+            checks.append(_check("product_volatility", "Volatile product in heat", STOP, f"{T:.1f} °F at {lab}",
+                                 f"< {t['vol_high_stop_temp_f']:.0f} °F for a high-volatility product", _src("vol_high_stop_temp_f"),
+                                 "High-volatility product at high air temperature: it can turn to vapor and move off target after it lands."))
+            adj.append("Heat Stop for a high-volatility product.")
+        elif (vol == "high" and T >= t["vol_high_caution_temp_f"]) or (vol == "moderate" and T >= t["vol_moderate_caution_temp_f"]):
+            key = "vol_high_caution_temp_f" if vol == "high" else "vol_moderate_caution_temp_f"
+            checks.append(_check("product_volatility", "Volatile product in heat", CAUTION, f"{T:.1f} °F at {lab}",
+                                 f"< {t[key]:.0f} °F for a {vol}-volatility product", _src(key),
+                                 f"{vol.capitalize()}-volatility product in warm air: vapor losses rise with temperature. Consider a cooler window.", blocking=False))
+            adj.append(f"Heat Caution for a {vol}-volatility product.")
+        else:
+            checks.append(_check("product_volatility", "Product volatility", GO, f"{vol} · {T:.1f} °F at {lab}", "Temperature below the volatility limits",
+                                 src("volatility"), f"{vol.capitalize()}-volatility product; air temperature is below the configured volatility limits."))
+        if vol in ("high", "moderate"):
+            inv = next((c for c in checks if c["id"] == "inversion"), None)
+            if inv and inv["status"] == CAUTION:
+                inv.update(status=STOP, blocking=True,
+                           reason=inv["reason"] + f" With a {vol}-volatility product, a possible weak inversion is treated as Stop: vapor can stay in a stable layer and move after application.")
+                adj.append("Possible weak inversion raised from Caution to Stop.")
+            tc = (metrics.get("trend_class") or {}).get("class")
+            if tc in ("developing", "strengthening") and not (inv and inv["status"] == STOP):
+                checks.append(_check("product_vapor_window", "Inversion developing after application", CAUTION, tc.capitalize(),
+                                     "Volatile products need mixed air during and after application", _src("inversion_clear_readings"),
+                                     "An inversion appears to be forming. Vapor from a volatile product can move in it after spraying ends - finish well before it forms or wait.",
+                                     blocking=False))
+                adj.append("Caution: inversion developing after application.")
+    return {"category": cat, "mode_of_action": moa, "volatility": vol, "off_target_hazard": haz, "adjustments": adj,
+            "sources": {k: src(k) for k in ("category", "mode_of_action", "volatility", "off_target_hazard")}}
 
 
 def decision_id(reading, at, field, product, t, observations=None):
