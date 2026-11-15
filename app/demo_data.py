@@ -8,25 +8,37 @@ FICTIONAL = "Fictional demonstration boundary"
 
 # Local metres from geo.ORIGIN. 1 acre = 4046.86 m2.
 FIELDS = [
-    {"id": "A", "name": "Field A", "crop": "Romaine lettuce", "crop_class": "row",
+    {"id": "A", "canopy_ft": 1.0, "name": "Field A", "crop": "Romaine lettuce", "crop_class": "row",
      "grower": "Riverbend Demo Farms (fictional)", "poly": rect(-900, 0, -498, 402),
      "sensor_id": "S1", "setting": "Low river-bottom block"},
-    {"id": "B", "name": "Field B", "crop": "Broccoli", "crop_class": "row",
+    {"id": "B", "canopy_ft": 2.0, "name": "Field B", "crop": "Broccoli", "crop_class": "row",
      "grower": "Desert Row Produce (fictional)", "poly": rect(300, 250, 702, 451),
      "sensor_id": "S2", "setting": "Valley block"},
-    {"id": "C", "name": "Field C", "crop": "Cauliflower", "crop_class": "row",
+    {"id": "C", "canopy_ft": 1.8, "name": "Field C", "crop": "Cauliflower", "crop_class": "row",
      "grower": "Sandhill Demo Growers (fictional)",
      # slightly irregular quadrilateral so pass clipping is visible
      "poly": [(300, -400), (1104, -400), (1104, 2), (360, 2)],
      "sensor_id": "S2", "setting": "Valley block"},
-    {"id": "D", "name": "Field D", "crop": "Lemons (orchard)", "crop_class": "orchard",
+    {"id": "D", "canopy_ft": 12.0, "name": "Field D", "crop": "Lemons (orchard)", "crop_class": "orchard",
      "grower": "Mesa Grove Demo Co. (fictional)", "poly": rect(2600, 1500, 3203, 1902),
      "sensor_id": None, "setting": "Mesa orchard block (no paired-height sensor nearby)"},
 ]
 
+# Simulated masts with explicit installed heights and reference surfaces.
+# S1 follows the challenge tower example; S2 follows the NDSU near-surface method
+# (temperature 9 in above the canopy and 9 ft above it; one wind sensor at 2 m above ground).
+SIM_ACCURACY = "±0.5 °F per temperature sensor (prototype assumption - replace with the sensor specification)"
 SENSORS = [
-    {"id": "S1", "name": "Mast S1 (simulated)", "xy": (-520, 380), "heights_ft": [5, 30]},
-    {"id": "S2", "name": "Mast S2 (simulated)", "xy": (500, 120), "heights_ft": [5, 30]},
+    {"id": "S1", "name": "Mast S1 (simulated)", "xy": (-520, 380), "heights_ft": [5, 30], "config": "challenge_tower",
+     "temp": [{"level": "lower", "height_ft": 5.0, "ref": "ground"}, {"level": "upper", "height_ft": 30.0, "ref": "ground"}],
+     "wind": [{"level": "lower", "height_ft": 5.0, "ref": "ground"}, {"level": "upper", "height_ft": 30.0, "ref": "ground"}],
+     "temp_accuracy_f": 0.5, "shielding": "Simulated aspirated radiation shields", "averaging": "10-min mean (simulated)",
+     "gust": "3-s gust, max in 10 min (simulated)"},
+    {"id": "S2", "name": "Mast S2 (simulated)", "xy": (500, 120), "heights_ft": [0.75, 9], "config": "near_surface",
+     "temp": [{"level": "lower", "height_ft": 0.75, "ref": "canopy"}, {"level": "upper", "height_ft": 9.0, "ref": "canopy"}],
+     "wind": [{"level": "lower", "height_ft": 6.56, "ref": "ground"}],
+     "temp_accuracy_f": 0.5, "shielding": "Simulated shaded sensors", "averaging": "10-min mean (simulated)",
+     "gust": "3-s gust, max in 10 min (simulated)"},
 ]
 
 # kind: neighbor_crop | worker_area | home | road | waterway
@@ -89,8 +101,8 @@ def fields_payload(user_areas=(), user_exclusions=()):
              "properties": {"id": e["id"], "field_id": e["field_id"], "name": e["name"], "source": e["source"]}}
             for e in list(EXCLUSIONS) + list(user_exclusions)]
     sensors = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": to_lonlat(*s["xy"])},
-                "properties": {"id": s["id"], "name": s["name"], "heights_ft": s["heights_ft"],
-                               "label": "Simulated paired-height sensor"}} for s in SENSORS]
+                "properties": {"id": s["id"], "name": s["name"], "heights_ft": s["heights_ft"], "config": s["config"],
+                               "temp": s["temp"], "wind": s["wind"], "label": "Simulated paired-height sensor"}} for s in SENSORS]
     return {
         "fields": {"type": "FeatureCollection", "features": feats},
         "sensitive": {"type": "FeatureCollection", "features": sens},

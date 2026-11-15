@@ -105,26 +105,57 @@ class Scenario:
         day = (slot.date() - self.day0.date()).days
         h = slot.hour + slot.minute / 60
         tl, th, wl, wh, dl, dh, rh = _interp(KEYS[sensor_id][day], h)
-        gust = round(wl * 1.35, 1)
-        lower = {"height_ft": 5, "temp_f": tl, "wind_mph": wl, "dir_from_deg": dl, "gust_mph": gust}
-        upper = {"height_ft": 30, "temp_f": th, "wind_mph": wh, "dir_from_deg": dh}
+        from app.demo_data import sensor as _sensor, SIM_ACCURACY
+        meta = _sensor(sensor_id)
+        T = {x["level"]: x for x in meta["temp"]}
+        W = {x["level"]: x for x in meta["wind"]}
+        obs = slot.isoformat()
+        def level(lv, temp, wind, d):
+            w = W.get(lv)
+            return {"height_ft": T[lv]["height_ft"], "ref": T[lv]["ref"], "temp_f": temp, "temp_observed_at": obs,
+                    "temp_accuracy_f": meta["temp_accuracy_f"],
+                    "wind_height_ft": w["height_ft"] if w else None, "wind_ref": w["ref"] if w else None,
+                    "wind_mph": wind if w else None, "dir_from_deg": d if w else None, "wind_observed_at": obs if w else None,
+                    "wind_installed": bool(w), "missing_reason": None if w else None}
+        lower = level("lower", tl, wl, dl)
+        upper = level("upper", th, wh, dh)
+        lower["gust_mph"] = round(wl * 1.35, 1)
+        if not upper["wind_installed"]:
+            upper["wind_note"] = "No wind sensor installed at this level"
         for g in GAPS:
             if g["sensor"] == sensor_id and g["day"] == day and g["start"] <= h < g["end"]:
                 target = upper if g["height"] == "upper" else lower
-                for k in ("temp_f", "wind_mph", "dir_from_deg"):
-                    target[k] = None
+                target["temp_f"] = None
+                if target["wind_installed"]:
+                    target["wind_mph"] = target["dir_from_deg"] = None
                 target["missing_reason"] = "Simulated telemetry gap"
         for e in self.events:
             st = datetime.fromisoformat(e["start"])
             if e["sensor"] == sensor_id and st <= slot < st + timedelta(minutes=e["duration_min"]):
                 lower.update(e["lower"])
-                upper.update(e["upper"])
+                if upper["wind_installed"]:
+                    upper.update(e["upper"])
                 lower["event"] = e["label"]
         kind = self.kind_at(slot)
-        return {"sensor_id": sensor_id, "observed_at": slot.isoformat(), "kind": kind,
+        return {"sensor_id": sensor_id, "observed_at": obs, "kind": kind, "config": meta["config"],
                 "source": "Simulated paired-height mast (demo)", "units": {"temp": "degF", "wind": "mph", "dir": "deg from"},
-                "lower": lower, "upper": upper, "rh_pct": rh,
-                "rain_prob_pct": self.rain_prob(slot)}
+                "lower": lower, "upper": upper, "rh_pct": rh, "rain_prob_pct": self.rain_prob(slot),
+                "accuracy_note": SIM_ACCURACY, "shielding": meta["shielding"], "averaging": meta["averaging"], "gust_interval": meta["gust"],
+                "mast_xy": meta["xy"]}
+
+    def trend(self, sensor_id, t, minutes=60):
+        """Upper-minus-lower temperature trend (°F per hour) from 3+ aligned simulated pairs."""
+        pts = []
+        for k in range(0, minutes + 1, 15):
+            r = self.reading(sensor_id, t - timedelta(minutes=k))
+            if r and r["lower"]["temp_f"] is not None and r["upper"]["temp_f"] is not None:
+                pts.append((k, r["upper"]["temp_f"] - r["lower"]["temp_f"]))
+        if len(pts) < 3:
+            return None
+        n = len(pts); mx = sum(p[0] for p in pts) / n; my = sum(p[1] for p in pts) / n
+        sxx = sum((p[0] - mx) ** 2 for p in pts)
+        slope_per_min = -sum((p[0] - mx) * (p[1] - my) for p in pts) / sxx  # k counts minutes back in time
+        return {"per_hour_f": round(slope_per_min * 60, 2), "points": n, "window_min": minutes}
 
     def rain_prob(self, t: datetime) -> float | None:
         if not (self.day0 <= t < self.end):

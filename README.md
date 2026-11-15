@@ -8,7 +8,7 @@ Hack Arizona AgX prototype. All fields, growers, sensors, neighbors, readings an
 
 ## Run it
 
-Requires Python 3.11+.
+Requires Python 3.11+. Optional real-data and terrain features also need `herbie-data cfgrib eccodes xarray tifffile scikit-image` (see requirements.txt).
 
 ```bash
 python -m venv .venv
@@ -22,7 +22,7 @@ Open http://127.0.0.1:8000. For a phone on the same network, open `http://<your-
 - **Replay demo** on the Today page resets requests, alerts and scenario events.
 - MapLibre is vendored in `web/vendor`. Fonts, basemap tiles and terrain load from the internet. Offline, the map still draws the fictional overlays on a plain background. If WebGL is unavailable, a 2D SVG schematic is used.
 
-Tests: `.venv/Scripts/python -m pytest -q` (38 tests).
+Tests: `.venv/Scripts/python -m pytest -q` (50 tests).
 
 Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic credentials (e.g. `ANTHROPIC_API_KEY`), then set `CANOPYGUARD_AI=1`. Claude (`claude-opus-5-5`, server-side refusal fallback enabled) only rephrases the rule-based engine lines it is given. Any failure or refusal falls back to the rule-based text. The key stays on the server. **This path was not exercised during the build** (no credentials were configured); the rule-based path is what the demo uses and what was tested.
 
@@ -101,6 +101,107 @@ Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic c
   - A drone's µm setting cannot verify an ASABE-class requirement, so the drone stays a candidate with a blocking conflict.
 - **Product buffers** become exclusion strips that stay regardless of equipment.
 - Equipment changes never clear a weather Stop.
+
+## Measurement, terrain, nozzle and real-data additions
+
+Each item below is marked **Implemented**, **Experimental**, **Simulated** or **Deferred**.
+
+### Measurement model — Implemented (`app/measure.py`, `app/engine.py`)
+- Every reading records its own metadata: installed height, reference surface (ground, canopy, spray surface or model ground), observation time, status, accuracy, averaging interval, gust interval and shielding. Temperature and wind heights are stored separately.
+- **Three configurations, never treated as equivalent:**
+
+  | Configuration | Heights | Source |
+  |---|---|---|
+  | Near-spray-surface | 6–12 in and 8–10 ft above the soil or closed canopy | NDSU AE-1705 |
+  | Challenge tower | 5 ft and 30 ft above ground | Challenge example |
+  | Model profile | Documented model levels | HRRR |
+
+- Simulated mast S1 follows the tower configuration. Simulated mast S2 follows the near-surface method: 9 in and 9 ft above the canopy, with a single wind sensor at 2 m above ground.
+- **A pair is invalid** (insufficient data, never Go) when:
+  - the two readings are more than 5 min apart (prototype tolerance, configurable);
+  - a required sensor height is undocumented;
+  - the two temperatures use different reference surfaces.
+- Shear is reported **Not assessed** on a mast with only one wind height.
+- The temperature-difference trend needs at least three recent pairs.
+- **Requirements register:** `/api/requirements`, shown in Records, lists 24 metrics, the decisions each one supports, and the behavior when it is missing.
+
+### Conditions at the release height — Implemented, estimates labeled (`app/profile.py`)
+This ports the useful part of the `backend-implementation` branch: multi-height and layer-by-layer analysis.
+- **Release height** is computed per spray plan:
+  - boom: inches above the target canopy;
+  - drone: metres above the canopy;
+  - airblast: manifold height above ground.
+- **Temperature:** linear interpolation between installed sensors. It is **never extrapolated**; outside the measured range the panel says so.
+- **Wind:** FAO-56 logarithmic profile (d = ⅔h, z₀m = 0.123h), fitted through the measured level or levels. It is flagged unreliable whenever an inversion is flagged, because the log law assumes neutral stability.
+- These estimates are context only. Go/Stop still uses measured values.
+- **Model profiles** (HRRR native levels at their real heights above model ground) get layer lapse rates, inverted layers, inversion top and regime. The panel states that the lowest level (~10 m) cannot resolve a 6 in–10 ft inversion.
+- **Not taken from that branch:** the soil "skin" temperature (not air temperature), EPA compliance wording, and the ML forecaster with unvalidated skill.
+
+### Nozzle candidates — Implemented, source-limited (`app/nozzles.py`)
+- **Required flow per nozzle** = GPA × MPH × spacing (in) ÷ 5940, from the TeeJet guide (li-tj416, p. 94).
+- **Transcribed data from the guide:**
+  - p. 76: droplet class by tip size for XR110 at 30 psi and AIXR at 60 psi;
+  - p. 94: the full AIXR11004 table (15–90 psi, XC → M, capacities 0.24–0.60 GPM).
+- **Required pressure** comes from the nominal-rating convention (size code = GPM at 40 psi).
+- **Droplet class** counts as documented only at a documented row, or between two rows that share the same class.
+- **Each candidate card shows:**
+  - required vs. expected flow, proposed pressure, droplet class and its source;
+  - the compatibility checks it passed or failed;
+  - why this family and why this size;
+  - why the smaller and larger sizes were rejected;
+  - which checks are missing.
+- **Demo result:** 15 GPA, 8 mph and 20 in spacing give 0.404 GPM per nozzle. The AIXR11004 delivers that at 40.8 psi, which is Coarse, so it is recommended.
+- If no candidate is fully documented, the answer is "no suitable candidate". A droplet class entered by the operator is used only as a labeled fallback.
+- Airblast and drone atomizers use separate models; ground-boom formulas are never applied to them.
+
+### Terrain — Implemented (`app/terrain.py`)
+- **Source:** USGS 3DEP Bare Earth DEM (ImageServer exportImage plus the EPQS point service), NAVD88, metres. Cached rasters cover the demo district (~10 m display grid) and the study area (~60 m, including the Gila Mountains).
+- **3D rendering** uses AWS Terrain Tiles, whose documented US source includes 3DEP.
+- **Map controls:**
+  - vertical exaggeration (1×/2×/3×/5×, labeled on the map; calculations always use true elevations);
+  - hillshaded elevation colours with a legend;
+  - contour lines;
+  - click-to-sample elevation;
+  - elevation profile along the first pass.
+- **Per-field statistics:** the demo fields are genuinely flat (1.4–2.1 m relief, mean slope under 1°), and no relief is invented.
+- **Acceptance check:** Prototype controls → "Fly to terrain check site (Gila Mountains)". A sampled raster value of 33.63 m matched EPQS at 33.64 m.
+
+### Real-data pipeline — Experimental (`app/realdata.py`)
+- **AZMET** Yuma Valley (az02), Yuma N.Gila (az14) and Yuma South (az36). Hourly observations come from the AZMET API. Location and sensor heights are parsed from each station's metadata page: temperature 1.5 m (Vaisala HMP60), wind 3.0 m (R. M. Young 03101/03301).
+- **HRRR** via Herbie from the AWS archive:
+  - `wrfsfc`: 2 m temperature, 10 m wind (rotated from grid-relative to earth-relative), surface height;
+  - `wrfnat`: temperature and height on hybrid levels 1–10. Height above model ground = geopotential height − surface height.
+- **NWS** hourly point forecast for the field.
+- Data is subset to the study area and cached in `data/cache/` (not committed). Failures return explicit "unavailable"; the simulated demo is never substituted.
+- **Fusion baseline (experimental):** HRRR 2 m plus an inverse-distance-weighted field of AZMET-minus-HRRR residuals. The 1.5 m vs 2 m height difference is a documented assumption. This is **not** kriging or regression kriging.
+- **Data support panel**, at the selected field: contributing stations and model cell, distances, times, heights, resolution, status, assumptions, and whether a local paired sensor exists.
+- **Validation (leave-one-station-out):** Nov 14, 2026 MST, every 2 h, HRRR analyses only (no future data), n = 33 station-hours.
+
+  | Method | MAE °F | RMSE °F | Bias °F |
+  |---|---|---|---|
+  | Raw HRRR 2 m | 1.98 | 2.30 | +1.97 |
+  | Nearest station | 0.89 | 1.22 | −0.13 |
+  | IDW of stations | 0.97 | 1.29 | −0.05 |
+  | Model + IDW residual | 0.98 | 1.28 | +0.03 |
+
+  The correction removes HRRR's warm bias but does not beat the nearest station on this small sample. Three stations and one day establish nothing general, and surface-temperature skill says nothing about detecting shallow inversions.
+
+### Other additions — Implemented
+- **Night scene lighting:** Auto follows the scenario clock using the computed sun elevation for Yuma; Day and Night are manual. Night darkens the imagery and sky and adds tractor headlights. It is independent of the interface theme.
+- **Spray liquid card:** product, carrier volume (not a dose), mix volume, tank loads, rain-free interval, and air-temperature range.
+  - The temperature range is an optional, labeled product constraint, enforced every 15-minute slot.
+  - Rain uses the rain-free interval after the last pass.
+- **Proposed vs. accepted plan:** "Accept this plan" records who accepted it, and the Schedule page shows when the proposal has changed since acceptance.
+- **Compare other equipment:** the rig options sit in a collapsed section under the recommendation.
+
+### Deferred
+- Geostatistical kriging (three stations cannot support a variogram).
+- NBM, GOES, CDL, NLCD, Sentinel-2, Landsat, SMAP, SSURGO, ERA5, IGRA, CASES-99, BLLAST and MATERHORN.
+- Synoptic/MesoWest and IEM.
+- PWM modelling.
+- A TTI droplet table (not in the loaded guide).
+- Airblast airflow modelling.
+- Seeding products from the lettuce report: that attachment was not available in this session.
 
 ## Three-minute demo script
 

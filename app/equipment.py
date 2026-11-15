@@ -3,7 +3,7 @@
 No equipment change can override a weather or product STOP: this module only
 reports configuration conflicts; weather status is evaluated separately."""
 import math
-from app import catalog, demo_data, paths
+from app import catalog, demo_data, paths, nozzles
 from app.geo import buffer_convex
 
 FT = 0.3048
@@ -133,19 +133,23 @@ def evaluate(field: dict, unit_id: str, cfg_override: dict | None, product: dict
             "which is not an ASABE droplet class - the requirement cannot be verified until a class is confirmed for this setting.",
             prod_c["min_droplet_class"]["source"])
     else:
-        ent = cfg.get("droplet_class_entered")
+        # Ground boom / airblast: documented class at the configured tip and pressure first,
+        # operator-entered class only as a labeled fallback.
+        fam = {"teejet_xr": "XR", "teejet_aixr": "AIXR"}.get(cfg.get("nozzle_id"))
+        doc_cls, doc_src = (nozzles._doc_class(fam, str(cfg.get("orifice_size")), float(cfg.get("pressure_psi") or 0))
+                            if fam and utype == "ground_boom" else (None, "No documented table for this nozzle in the loaded source"))
+        ent = doc_cls or cfg.get("droplet_class_entered")
+        src = doc_src if doc_cls else "Operator-entered from the manufacturer chart (not verified by this app)"
         if not ent:
             add("block", "droplet_class_missing",
-                f"Product requires ASABE {catalog.ASABE_NAMES[req]} or coarser, but no droplet class has been entered for this tip and pressure.",
+                f"Product requires ASABE {catalog.ASABE_NAMES[req]} or coarser, but the droplet class at this tip and pressure is not documented here and none was entered. {doc_src}.",
                 prod_c["min_droplet_class"]["source"])
         elif catalog.ASABE_CLASSES.index(ent) < catalog.ASABE_CLASSES.index(req):
             add("block", "droplet_too_fine",
-                f"Entered class {catalog.ASABE_NAMES[ent]} is finer than the required {catalog.ASABE_NAMES[req]}.",
+                f"Class {catalog.ASABE_NAMES[ent]} at this tip and pressure is finer than the required {catalog.ASABE_NAMES[req]} ({src}).",
                 prod_c["min_droplet_class"]["source"])
         else:
-            add("info", "droplet_ok",
-                f"Entered class {catalog.ASABE_NAMES[ent]} meets the {catalog.ASABE_NAMES[req]}-or-coarser requirement. "
-                "Class is operator-entered from the manufacturer chart, not verified by this app.", u["config_source"])
+            add("info", "droplet_ok", f"Class {catalog.ASABE_NAMES[ent]} meets the {catalog.ASABE_NAMES[req]}-or-coarser requirement ({src}).", src)
 
     pressure = _pressure_check(cfg) if utype == "ground_boom" else None
     if pressure and pressure["mismatch"]:
@@ -176,10 +180,21 @@ def evaluate(field: dict, unit_id: str, cfg_override: dict | None, product: dict
         "message": "No nozzle is recommended: verified pressure-dependent droplet data is not loaded in this build. "
                    "Compare candidates and read the class for your tip size and pressure from the manufacturer chart.",
     }
+    nozzle_eval = None
+    if utype == "ground_boom":
+        fam = {"teejet_xr": "XR", "teejet_aixr": "AIXR"}.get(cfg.get("nozzle_id"))
+        nozzle_eval = nozzles.evaluate(cfg.get("rate_gpa"), cfg.get("speed_mph"), cfg.get("nozzle_spacing_in"),
+                                       min_class=req, pump_min_psi=cfg.get("pump_min_psi"), pump_max_psi=cfg.get("pump_max_psi"),
+                                       release_height_in=cfg.get("boom_height_in"),
+                                       configured=f"{fam}110{cfg.get('orifice_size')}" if fam else None)
+    elif utype == "airblast":
+        nozzle_eval = {"status": "not_modelled", "candidates": [], "message": "Airblast nozzle/airflow selection depends on canopy and fan settings that are not modelled here. Use the UC Airblast Spray Advisor; ground-boom formulas are not applied to airblast."}
+    elif utype == "drone":
+        nozzle_eval = {"status": "not_modelled", "candidates": [], "message": "Drone centrifugal atomizers are configured by droplet size (µm), flow, swath, speed and height. TeeJet ground-boom formulas and compatibility are not applied."}
     blocking = [i for i in issues if i["severity"] == "block"]
     return {"unit": {k: u[k] for k in ("id", "name", "type", "crew", "shift")}, "type_info": {k: et.get(k) for k in ("name", "illustration", "illustration_note", "reference", "advisor", "unsupported")},
             "config": cfg, "config_source": u["config_source"], "issues": issues, "compatible": not blocking,
             "status": "conflict" if blocking else "candidate",
             "estimate": est, "path": plan, "buffers": [{k: v for k, v in b.items() if k != "poly"} for b in (buffers or [])],
-            "pressure": pressure, "candidates": candidates, "recommendation": recommendation,
+            "pressure": pressure, "candidates": candidates, "recommendation": recommendation, "nozzle_engine": nozzle_eval,
             "weather_note": "Equipment choice cannot clear a weather or product Stop. An inversion blocks every configuration."}

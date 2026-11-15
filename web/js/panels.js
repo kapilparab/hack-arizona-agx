@@ -1,12 +1,15 @@
 import { state, chip, esc, icon, when, hm, dur, kindTag, compass, fieldProps, productName, unitName, planFor } from './core.js';
+import { releaseSection, dataSupport } from './insight.js';
 
 // ----------------------------------------------------- cross-section SVG
 // Vertical slice at the sensor mast: 5 ft and 30 ft sensors, temperatures, and
 // wind at each height drawn as compass dials showing where air is moving TO.
-export function crossSection(a, releaseFt) {
+export function crossSection(a, releaseFt, canopyFt = 0) {
   const rd = a.reading;
   const W = 340, H = 236, gy = 200, top = 26;
-  const yFt = (ft) => gy - (ft / 36) * (gy - top);
+  const agl = (lv) => (lv.ref === 'canopy' ? (canopyFt || 0) : 0) + lv.height_ft;
+  const zTop = rd ? Math.max(agl(rd.upper), releaseFt || 0) * 1.2 : 36;
+  const yFt = (ft) => gy - (ft / zTop) * (gy - top);
   if (!rd) {
     return `<svg class="xsec" viewBox="0 0 ${W} ${H}" role="img" aria-label="No paired-height sensor for this field">
       <rect width="${W}" height="${H}" rx="14" fill="#0B1210"/>
@@ -29,16 +32,17 @@ export function crossSection(a, releaseFt) {
       <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="2.4" stroke-linecap="round"/>
       <path d="M${ax},${ay} L${x2},${y2} L${bx},${by}" fill="none" stroke="${col}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
   };
-  const row = (ft, r, upper) => {
-    const y = yFt(ft);
+  const hl = (lv) => (lv.height_ft < 2 ? Math.round(lv.height_ft * 12) + ' in' : lv.height_ft + ' ft');
+  const row = (lv, r, upper) => {
+    const y = yFt(agl(lv));
     return `<rect x="${mastX - 8}" y="${y - 6}" width="16" height="12" rx="3" fill="${upper ? '#8EC9FF' : '#7CF0BE'}"/>
-      <text x="${mastX - 16}" y="${y + 4}" text-anchor="end" font-size="11.5" font-weight="600" fill="#AAB7AF">${ft} ft</text>
+      <text x="${mastX - 16}" y="${y + 4}" text-anchor="end" font-size="11.5" font-weight="600" fill="#AAB7AF">${hl(lv)}</text>
       <text x="${mastX + 20}" y="${y - 2}" font-size="19" font-weight="600" fill="#EEF3EF" letter-spacing="-0.5">${r.temp_f != null ? r.temp_f.toFixed(1) + '°' : 'missing'}</text>
-      <text x="${mastX + 20}" y="${y + 14}" font-size="10.5" fill="#AAB7AF">${r.wind_mph != null ? `${r.wind_mph.toFixed(1)} mph from ${compass(r.dir_from_deg)} ${Math.round(r.dir_from_deg)}°` : 'wind missing'}</text>
-      ${dial(W - 38, y, 20, r.dir_from_deg, r.wind_mph, upper)}`;
+      <text x="${mastX + 20}" y="${y + 14}" font-size="10.5" fill="#AAB7AF">${r.wind_installed === false ? 'no wind sensor at this level' : r.wind_mph != null ? `${r.wind_mph.toFixed(1)} mph from ${compass(r.dir_from_deg)} ${Math.round(r.dir_from_deg)}° (${r.wind_height_ft < 2 ? Math.round(r.wind_height_ft * 12) + ' in' : (+r.wind_height_ft).toFixed(1) + ' ft'})` : 'wind missing'}</text>
+      ${r.wind_installed === false ? '' : dial(W - 38, y, 20, r.dir_from_deg, r.wind_mph, upper)}`;
   };
   const relY = releaseFt != null ? yFt(Math.min(releaseFt, 35)) : null;
-  const lidY = yFt(30);
+  const lidY = yFt(agl(up));
   const msg = warm ? [`Inversion lid · +${dT} °F warmer above`, '#FF8A7E'] : inv ? [`Slightly warmer above · within ±${u} °F`, '#F5B83D'] : dT != null ? [`Cooler above · no inversion (${dT} °F)`, '#46D39A'] : ['', ''];
   return `<svg class="xsec" viewBox="0 0 ${W} ${H}" role="img" aria-label="Cross-section: 5 ft ${lo.temp_f ?? 'missing'} °F, 30 ft ${up.temp_f ?? 'missing'} °F, difference ${dT ?? 'unknown'} °F">
     <defs>
@@ -54,10 +58,11 @@ export function crossSection(a, releaseFt) {
     <text x="14" y="${top - 6}" font-size="10.5" font-weight="600" fill="${msg[1]}">${msg[0]}</text>
     <rect x="0" y="${gy - 9}" width="${W}" height="9" fill="url(#xs-crop)"/>
     <rect x="0" y="${gy}" width="${W}" height="${H - gy}" fill="#16120C"/>
-    <line x1="${mastX}" y1="${gy}" x2="${mastX}" y2="${yFt(32)}" stroke="#DDE7E1" stroke-width="2" stroke-linecap="round"/>
+    <line x1="${mastX}" y1="${gy}" x2="${mastX}" y2="${yFt(agl(up) * 1.06)}" stroke="#DDE7E1" stroke-width="2" stroke-linecap="round"/>
     ${relY != null ? `<line x1="10" y1="${relY}" x2="${mastX - 10}" y2="${relY}" stroke="#FFD166" stroke-width="1.4" stroke-dasharray="4 3"/>
-      <text x="10" y="${relY + 13}" font-size="9" fill="#FFD166">release ${releaseFt < 3 ? (releaseFt * 12).toFixed(0) + ' in' : releaseFt.toFixed(0) + ' ft'}</text>` : ''}
-    ${row(30, up, true)}${row(5, lo, false)}
+      <text x="10" y="${H - 12}" font-size="9" fill="#FFD166">- - release height ${releaseFt < 3 ? (releaseFt * 12).toFixed(0) + ' in' : releaseFt.toFixed(1) + ' ft'} above ground</text>` : ''}
+    ${canopyFt && (lo.ref === 'canopy') ? `<rect x="0" y="${yFt(canopyFt)}" width="${W}" height="${gy - yFt(canopyFt)}" fill="rgba(62,143,94,.25)"/><text x="${W - 10}" y="${yFt(canopyFt) - 3}" text-anchor="end" font-size="9" fill="#7FBF95">canopy ${canopyFt} ft</text>` : ''}
+    ${row(up, up, true)}${row(lo, lo, false)}
     <text x="${W - 10}" y="${H - 11}" text-anchor="end" font-size="9" fill="#74827A">arrows: where air moves</text>
   </svg>`;
 }
@@ -70,7 +75,7 @@ export const askRows = (fid, items) => `<div class="ask">${items.map(([topic, ic
      <svg class="ic sm ask-go" aria-hidden="true"><use href="#i-chev"/></svg></button>`).join('')}</div>`;
 
 // ------------------------------------------------------------ status panel
-export function statusPanel(a, fp, releaseFt) {
+export function statusPanel(a, fp, releaseFt, live) {
   const m = a.metrics, rd = a.reading, g = a.ground_only, pv = a.provenance;
   const flagged = a.checks;
   const job = state.jobs.find((j) => j.field_id === fp.id && j.status === 'open');
@@ -82,8 +87,8 @@ export function statusPanel(a, fp, releaseFt) {
     <p class="reason"><b>${esc(a.headline)}.</b> ${esc(a.reason)}</p>
     <div class="small muted">${kindTag(pv.kind)} Reading ${pv.observed_at ? when(pv.observed_at) + ' MST' : 'unavailable'} · viewed ${when(a.time)} ${m.age_min != null ? `· ${Math.round(m.age_min)} min old` : ''}</div>
     <div class="compare">
-      <div><div class="k">5 ft station only</div>${chip(g.status)}</div>
-      <div><div class="k">Paired 5 ft + 30 ft</div>${chip(a.status)}</div>
+      <div><div class="k">Single low station only</div>${chip(g.status)}</div>
+      <div><div class="k">Paired-height mast</div>${chip(a.status)}</div>
       ${a.blind_spot ? `<div class="blind">${icon('caution', 'sm')} Ground-only reading looks acceptable. The upper sensor exposes the problem.</div>` : ''}
     </div>
     ${askRows(fp.id, [['hold', 'chat', 'Explain this status', 'Plain-language reason, English or Spanish'],
@@ -91,19 +96,21 @@ export function statusPanel(a, fp, releaseFt) {
   </div>
   <div class="side-sec">
     <h3>At the sensor mast</h3>
-    ${crossSection(a, releaseFt)}
+    <p class="xs muted" style="margin:-4px 0 8px">${esc(a.metrics.config_name || '')}${a.metrics.pair_label ? ' · ' + esc(a.metrics.pair_label) : ''}</p>
+    ${crossSection(a, releaseFt, fp.canopy_ft)}
     <dl class="kv" style="margin-top:8px">
-      <dt>Upper − lower</dt><dd>${m.delta_t_f != null ? `${m.delta_t_f > 0 ? '+' : ''}${m.delta_t_f} °F ± ${m.delta_t_uncertainty_f}` : '—'}</dd>
+      <dt>Upper minus lower</dt><dd>${m.delta_t_f != null ? `${m.delta_t_f > 0 ? '+' : ''}${m.delta_t_f} °F ± ${m.delta_t_uncertainty_f}` : '—'}</dd>
       <dt>Speed difference</dt><dd>${m.speed_diff_mph != null ? m.speed_diff_mph + ' mph' : '—'}</dd>
       <dt>Direction difference</dt><dd>${m.dir_diff_deg != null ? m.dir_diff_deg + '°' + (m.dir_comparison_reliable ? '' : ' (calm: unreliable)') : '—'}</dd>
       <dt>Source</dt><dd>${esc(pv.source || 'None')}</dd>
     </dl>
     <details style="margin-top:8px"><summary>More conditions</summary>
-      <dl class="kv"><dt>Gust (5 ft)</dt><dd>${rd?.lower.gust_mph != null ? rd.lower.gust_mph + ' mph (simulated)' : '—'}</dd>
+      <dl class="kv"><dt>Gust (5 ft)</dt><dd>${rd?.lower.gust_mph != null ? rd.lower.gust_mph + ' mph<span class="demo-note"> (simulated)</span>' : '—'}</dd>
       <dt>Humidity</dt><dd>${rd?.rh_pct != null ? rd.rh_pct + ' %' : '—'}</dd>
-      <dt>Rain probability</dt><dd>${rd?.rain_prob_pct != null ? rd.rain_prob_pct + ' % (simulated forecast)' : '—'}</dd>
+      <dt>Rain probability</dt><dd>${rd?.rain_prob_pct != null ? rd.rain_prob_pct + ' %<span class="demo-note"> (simulated forecast)</span>' : '—'}</dd>
       <dt>Rule version</dt><dd>${esc(a.rule_version)}</dd></dl></details>
   </div>
+  ${releaseSection(a)}
   <div class="side-sec">
     <h3>Checks</h3>
     <ul class="checklist">${flagged.map((c) => `<li class="ck ${esc(c.status)}">${sdot(c.status)}<div class="ck-b"><div class="ck-h"><b>${esc(c.label)}</b><span class="ck-v">${esc(c.measured)}</span></div>
@@ -118,6 +125,7 @@ export function statusPanel(a, fp, releaseFt) {
       <p class="xs muted" style="margin-top:6px">Attention check from wind direction and distance only. Not an exposure, deposition or safe-distance prediction.</p>`
       : '<p class="small muted">No marked area within the attention radius.</p>'}
   </div>
+  ${dataSupport(a, live)}
   ${job ? `<div class="side-sec"><h3>Treatment request</h3>
     <dl class="kv"><dt>Reference</dt><dd>${esc(job.reference)}</dd><dt>Product</dt><dd>${esc(productName(job.product_id))}</dd>
     <dt>Window</dt><dd>${when(job.earliest_start)} → ${when(job.latest_completion)}</dd>

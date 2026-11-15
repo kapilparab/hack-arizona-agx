@@ -73,7 +73,10 @@ export function dur(min) {
   const h = Math.floor(Math.abs(min) / 60), m = Math.abs(min) % 60;
   return (min < 0 ? '−' : '') + (h ? `${h} h ${m ? m + ' min' : ''}` : `${m} min`).trim();
 }
-export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// "Hide all demo labels" (Prototype controls) strips "(fictional …)" / "(simulated …)" / "· simulated" markers from text.
+const DEMO_RE = /\s*\([^()]*\b(?:fictional|simulated)\b[^()]*\)|\s*·\s*(?:fictional|simulated)\b/gi;
+export const demoText = (s) => (document.body?.classList.contains('hide-labels') ? String(s ?? '').replace(DEMO_RE, '') : String(s ?? ''));
+export const esc = (s) => demoText(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const icon = (id, cls = '') => `<svg class="ic ${cls}" aria-hidden="true"><use href="#i-${id}"/></svg>`;
 
 const STATUS = {
@@ -81,6 +84,7 @@ const STATUS = {
   CAUTION: { icon: 'caution', en: 'Caution', es: 'Precaución' },
   STOP: { icon: 'stop', en: 'Stop', es: 'Alto' },
   INSUFFICIENT_DATA: { icon: 'nodata', en: 'Insufficient data', es: 'Datos insuficientes' },
+  NOT_ASSESSED: { icon: 'info', en: 'Not assessed', es: 'No evaluado' },
 };
 export const statusText = (s) => (STATUS[s] || STATUS.INSUFFICIENT_DATA)[state.lang] || s;
 export function chip(s, size = '') {
@@ -244,5 +248,6 @@ export function initTheme() {
 
 // Map view preferences shared by the map and the prototype drawer.
 state.ui = { view: 'overview', thermal: false, thermalHeight: 'lower', wind: 'both', colorBy: 'status',
-  showAreas: true, showPasses: true, is3d: true, basemap: 'imagery' };
+  showAreas: true, showPasses: true, is3d: true, basemap: 'imagery', lighting: 'auto', exaggeration: 1,
+  terrainColor: false, contours: false, liveStations: false, liveModel: false };
 state.mapCtl = null; // set by the map view while it is mounted

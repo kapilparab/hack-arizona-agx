@@ -2,7 +2,7 @@
 whether it is a challenge default, a product entry, or a prototype assumption."""
 from datetime import timezone, timedelta
 
-RULE_VERSION = "cg-rules-0.3.0"
+RULE_VERSION = "cg-rules-0.4.0"
 # Arizona does not observe DST, so a fixed UTC-7 offset is correct year-round.
 MST = timezone(timedelta(hours=-7), "MST")
 SLOT_MIN = 15  # scenario + scheduling resolution, minutes
@@ -18,6 +18,8 @@ DEFAULT_THRESHOLDS = {
     "dir_shear_caution_deg": {"value": 45.0, "source": PROTOTYPE},
     "calm_direction_mph": {"value": 2.0, "source": PROTOTYPE + " - below this, direction comparisons are unreliable"},
     "stale_after_min": {"value": 20.0, "source": PROTOTYPE},
+    "pair_time_tolerance_min": {"value": 5.0, "source": PROTOTYPE + " - max time gap between the two temperatures of a pair"},
+    "pair_distance_m": {"value": 25.0, "source": PROTOTYPE + " - max horizontal separation for two sensors to form a pair"},
     "downwind_cone_deg": {"value": 45.0, "source": PROTOTYPE + " - half-angle for 'air moving toward' attention check"},
     "attention_radius_m": {"value": 400.0, "source": PROTOTYPE + " - attention radius, NOT a safe distance"},
     "rain_prob_block_pct": {"value": 40.0, "source": PROTOTYPE + " - forecast probability treated as conflicting with a rain-free interval"},

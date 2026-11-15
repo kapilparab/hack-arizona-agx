@@ -16,6 +16,9 @@ export function initSim() {
   let hide = false;
   try { hide = localStorage.getItem('cg-hide-demo') === '1'; } catch {}
   setHideDemo(hide);
+  let hideLabels = false;
+  try { hideLabels = localStorage.getItem('cg-hide-labels') === '1'; } catch {}
+  setHideLabels(hideLabels, false);
   on((what) => { if (['route', 'mapstate', 'theme', 'plan'].includes(what) && !el().hidden) render(); });
 }
 export function openSim() {
@@ -39,10 +42,18 @@ function setHideDemo(on) {
   try { localStorage.setItem('cg-hide-demo', on ? '1' : '0'); } catch {}
 }
 
+// Presentation mode: removes every Simulated / Fictional tag, demo disclaimer line and "(fictional)" suffix.
+function setHideLabels(on, rerender = true) {
+  state.ui.hideLabels = on;
+  document.body.classList.toggle('hide-labels', on);
+  try { localStorage.setItem('cg-hide-labels', on ? '1' : '0'); } catch {}
+  if (rerender) emit('lang'); // re-renders the current view so text-level labels are rebuilt
+}
+
 const sw = (id, checked, label, desc) => `<label class="toggle-row" for="${id}"><span><span class="t">${label}</span>${desc ? `<br><span class="d">${desc}</span>` : ''}</span>
   <span class="switch"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''}><span></span></span></label>`;
 const seg = (name, opts, cur, label) => `<div class="seg" role="group" aria-label="${label}">${opts.map(([v, l]) =>
-  `<button type="button" data-${name}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+  `<button type="button" data-${name}="${v}" aria-pressed="${String(cur) === String(v)}">${l}</button>`).join('')}</div>`;
 
 function render() {
   const ui = state.ui, onMap = !!state.mapCtl;
@@ -62,11 +73,21 @@ function render() {
             `<button type="button" class="view-mode" data-view="${v}" aria-pressed="${ui.view === v}" ${onMap ? '' : 'disabled'}>${icon(ic)}<span class="n">${n}</span><span class="c">${c}</span></button>`).join('')}
         </div>${mapOnly}</section>
       <section class="sim-sec"><h3>Presentation</h3>
-        ${sw('sim-hidedemo', ui.hideDemo, 'Hide demo badges', 'Hides the “Simulated demo data” badge and this button. Reopen with Shift + P. Per-reading “Simulated” tags stay visible.')}</section>
+        ${sw('sim-hidedemo', ui.hideDemo, 'Hide demo badges', 'Hides the “Simulated demo data” badge and this button. Reopen with Shift + P. Per-reading “Simulated” tags stay visible.')}
+        ${sw('sim-hidelabels', ui.hideLabels, 'Hide all demo labels', 'Hides every “Simulated” and “Fictional” tag, the demo disclaimer lines and the “(fictional)” suffixes on names. For presentations only: the data is still simulated.')}</section>
       <section class="sim-sec"><h3>Appearance</h3>
         <div class="toggle-row"><span class="t">Theme</span>${seg('theme', [['light', 'Day'], ['dark', 'Night']], state.theme, 'Theme')}</div>
+        <div class="toggle-row"><span><span class="t">Scene lighting</span><br><span class="d">Auto follows the scenario clock (sun below the horizon = night)</span></span>${seg('lighting', [['auto', 'Auto'], ['day', 'Day'], ['night', 'Night']], ui.lighting, 'Scene lighting')}</div>
         <div class="toggle-row"><span class="t">Map</span>${seg('dim', [['2d', '2D'], ['3d', '3D']], ui.is3d ? '3d' : '2d', 'Map dimension')}</div>
         <div class="toggle-row"><span class="t">Basemap</span>${seg('base', [['imagery', 'Satellite'], ['streets', 'Streets']], ui.basemap, 'Basemap')}</div></section>
+      <section class="sim-sec"><h3>Terrain (USGS 3DEP)</h3><p class="hint">Real elevation. Exaggeration changes the picture only; elevations and calculations stay true.</p>
+        <div class="toggle-row"><span class="t">Vertical exaggeration</span>${seg('exag', [[1, '1×'], [2, '2×'], [3, '3×'], [5, '5×']], ui.exaggeration, 'Vertical exaggeration')}</div>
+        ${sw('sim-tcolor', ui.terrainColor, 'Elevation colours + hillshade', 'Demo district, 3DEP Bare Earth DEM')}
+        ${sw('sim-contours', ui.contours, 'Contour lines')}
+        <button type="button" class="btn sm" id="sim-tsite" ${onMap ? '' : 'disabled'} style="margin-top:8px">${icon('map', 'sm')}Fly to terrain check site (Gila Mountains)</button></section>
+      <section class="sim-sec"><h3>Regional real data</h3><p class="hint">Real observations and model output, shown separately from the simulated demo.</p>
+        ${sw('sim-livest', ui.liveStations, 'AZMET stations (observed)', 'Yuma Valley, Yuma N.Gila, Yuma South with sensor heights')}
+        ${sw('sim-livemod', ui.liveModel, 'HRRR 2 m temperature (raw model)', '3 km native grid, cell-centre dots')}</section>
       <section class="sim-sec"><h3>Layers</h3>
         ${sw('sim-thermal', ui.thermal, 'Thermal heat map', 'Interpolated air temperature from the 2 simulated masts. Not a drift-risk map.')}
         <div class="toggle-row"><span class="t" style="padding-left:2px">Thermal height</span>${seg('theight', [['lower', '5 ft'], ['upper', '30 ft']], ui.thermalHeight, 'Thermal height')}</div>
@@ -102,6 +123,13 @@ function bind() {
   root.querySelectorAll('[data-view]').forEach((b) => (b.onclick = () => set('view', b.dataset.view)));
   root.querySelectorAll('[data-theme]').forEach((b) => (b.onclick = () => { setTheme(b.dataset.theme); render(); }));
   root.querySelectorAll('[data-dim]').forEach((b) => (b.onclick = () => set('is3d', b.dataset.dim === '3d')));
+  root.querySelectorAll('[data-lighting]').forEach((b) => (b.onclick = () => set('lighting', b.dataset.lighting)));
+  root.querySelectorAll('[data-exag]').forEach((b) => (b.onclick = () => set('exaggeration', Number(b.dataset.exag))));
+  root.querySelector('#sim-tcolor')?.addEventListener('change', (e) => set('terrainColor', e.target.checked));
+  root.querySelector('#sim-contours')?.addEventListener('change', (e) => set('contours', e.target.checked));
+  root.querySelector('#sim-livest')?.addEventListener('change', (e) => set('liveStations', e.target.checked));
+  root.querySelector('#sim-livemod')?.addEventListener('change', (e) => set('liveModel', e.target.checked));
+  root.querySelector('#sim-tsite')?.addEventListener('click', () => state.mapCtl?.apply('terrainSite'));
   root.querySelectorAll('[data-base]').forEach((b) => (b.onclick = () => set('basemap', b.dataset.base)));
   root.querySelectorAll('[data-theight]').forEach((b) => (b.onclick = () => { state.ui.thermal = true; set('thermalHeight', b.dataset.theight); }));
   root.querySelectorAll('[data-wind]').forEach((b) => (b.onclick = () => set('wind', b.dataset.wind)));
@@ -111,6 +139,10 @@ function bind() {
   root.querySelector('#sim-hidedemo')?.addEventListener('change', (e) => {
     setHideDemo(e.target.checked);
     if (e.target.checked) toast('Demo badges hidden. Press Shift + P to reopen prototype controls.');
+  });
+  root.querySelector('#sim-hidelabels')?.addEventListener('change', (e) => {
+    setHideLabels(e.target.checked);
+    toast(e.target.checked ? 'Demo labels hidden. The data shown is still simulated.' : 'Demo labels shown.');
   });
   root.querySelector('#sim-passes')?.addEventListener('change', (e) => set('showPasses', e.target.checked));
   root.querySelector('#sim-inject')?.addEventListener('click', () => state.mapCtl?.inject());

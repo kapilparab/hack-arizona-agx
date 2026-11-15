@@ -6,9 +6,10 @@ const PRI_L = { high: 'High', medium: 'Medium', normal: 'Normal', low: 'Low' };
 
 export async function renderSchedule(root) {
   root.innerHTML = '<div class="page"><div class="skeleton" style="height:320px"></div></div>';
-  let plan, tls;
+  let plan, tls, accepted;
   try {
     plan = await loadPlan();
+    accepted = await api('/api/schedule/accepted').catch(() => ({ status: 'none' }));
     tls = Object.fromEntries(await Promise.all(state.jobs.map(async (j) => [j.id, await api('/api/timeline?field_id=' + j.field_id)])));
   } catch (e) {
     root.innerHTML = `<div class="page">${stateBox('error', 'Schedule could not load', e.message)}</div>`;
@@ -27,7 +28,10 @@ export async function renderSchedule(root) {
     </div>
 
     <section class="panel" aria-labelledby="ord-h">
-      <h2 id="ord-h">Proposed order</h2>
+      <div class="section-title"><h2 id="ord-h" style="margin:0">Proposed order</h2>
+        ${accepted.status === 'none' ? '<span class="tag sim">Proposed - not accepted</span>' : accepted.order.join() === plan.order.join()
+          ? `<span class="tag user">Accepted by ${esc(accepted.by)} · ${esc(accepted.at.replace('T', ' ').slice(0, 16))}</span>`
+          : `<span class="tag sim">Changed since acceptance (${esc(accepted.order.join(' → '))})</span>`}</div>
       <div class="compare-orders">
         <div class="order-card chosen"><div class="small muted">Proposed</div><div class="order-seq">${esc(c.order.join(' → '))}</div>
           <div class="small">${c.scheduled.length} of ${c.order.length} jobs fit before their deadlines${c.unscheduled.length ? `; ${esc(c.unscheduled.join(', '))} unscheduled` : ''}.</div></div>
@@ -36,6 +40,9 @@ export async function renderSchedule(root) {
       </div>
       <p class="small" style="margin-top:10px">${changed ? 'The order changed because ' + esc(reasonText(plan)) : 'The request order is already the best evaluated order.'}</p>
       <p class="xs muted" style="margin-top:4px">${esc(plan.objective)} ${esc(plan.conditional_note)}</p>
+      <form id="accept-form" class="btn-row" style="margin-top:14px;align-items:center"><label class="sr" for="acc-name">Operator name</label>
+        <input id="acc-name" type="text" placeholder="Operator name" style="max-width:220px"><button class="btn primary" type="submit">${icon('go', 'sm')}Accept this plan</button>
+        <span class="xs muted">Accepting records the plan and who accepted it. Each job still needs a fresh local check before starting.</span></form>
     </section>
 
     <section class="panel" aria-labelledby="g-h">
@@ -65,6 +72,11 @@ export async function renderSchedule(root) {
     </section>
   </div>`;
 
+  root.querySelector('#accept-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try { const a = await api('/api/schedule/accept', { method: 'POST', body: { operator: root.querySelector('#acc-name').value } }); toast(`Plan accepted by ${a.by} and recorded.`); renderSchedule(root); }
+    catch (err) { toast(err.message, true); }
+  };
   root.querySelector('#recalc').onclick = async () => {
     try { await loadPlan(true, 'operator recalculated'); toast('Plan recalculated and recorded.'); renderSchedule(root); } catch (e) { toast(e.message, true); }
   };

@@ -20,9 +20,10 @@ def scn():
 
 
 def reading(t, tl=60, th=58, wl=5, wh=6, dl=350, dh=10):
+    lv = lambda h, T, W, D: {"height_ft": h, "ref": "ground", "temp_f": T, "temp_observed_at": t.isoformat(), "temp_accuracy_f": 0.5,
+                             "wind_height_ft": h, "wind_ref": "ground", "wind_mph": W, "dir_from_deg": D, "wind_installed": True}
     return {"sensor_id": "T", "observed_at": t.isoformat(), "kind": "simulated_observation", "source": "test",
-            "lower": {"height_ft": 5, "temp_f": tl, "wind_mph": wl, "dir_from_deg": dl},
-            "upper": {"height_ft": 30, "temp_f": th, "wind_mph": wh, "dir_from_deg": dh}, "rh_pct": 40, "rain_prob_pct": 5}
+            "lower": lv(5, tl, wl, dl), "upper": lv(30, th, wh, dh), "rh_pct": 40, "rain_prob_pct": 5}
 
 
 T0 = datetime(2026, 11, 16, 9, 0, tzinfo=MST)
@@ -138,9 +139,18 @@ def test_airblast_on_row_crop_blocked():
     assert any(i["code"] == "crop_mismatch" for i in ev["issues"])
 
 
-def test_finer_entered_class_blocks():
-    ev = equipment.evaluate(demo_data.field("B"), "U1", {"droplet_class_entered": "F"}, catalog.PRODUCTS["demo_r"])
+def test_documented_class_too_fine_blocks():
+    # TeeJet guide p.76: XR11004 at 30 psi is Medium; Demo Herbicide H requires Coarse or coarser.
+    ev = equipment.evaluate(demo_data.field("B"), "U1", {"nozzle_id": "teejet_xr", "orifice_size": "04", "pressure_psi": 30}, catalog.PRODUCTS["demo_h"])
     assert any(i["code"] == "droplet_too_fine" for i in ev["issues"])
+
+
+def test_undocumented_pressure_falls_back_to_operator_entry_only():
+    ev = equipment.evaluate(demo_data.field("B"), "U1", {"nozzle_id": "teejet_xr", "orifice_size": "04", "pressure_psi": 45}, catalog.PRODUCTS["demo_r"])
+    assert any(i["code"] == "droplet_class_missing" for i in ev["issues"])
+    ev2 = equipment.evaluate(demo_data.field("B"), "U1", {"nozzle_id": "teejet_xr", "orifice_size": "04", "pressure_psi": 45, "droplet_class_entered": "M"}, catalog.PRODUCTS["demo_r"])
+    ok = next(i for i in ev2["issues"] if i["code"] == "droplet_ok")
+    assert "Operator-entered" in ok["message"]
 
 
 def test_herbicide_buffer_persists_across_equipment():

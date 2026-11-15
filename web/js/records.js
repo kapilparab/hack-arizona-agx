@@ -46,6 +46,17 @@ export async function renderRecords(root) {
       </tbody></table></div>` : stateBox('empty', 'No records of this type yet', 'Records appear as you plan, change equipment, mark areas, and replay applications.')}
     </section>
 
+    <section class="panel" aria-labelledby="req-h">
+      <div class="section-title"><h2 id="req-h">Data requirements register</h2><span class="small muted">What each metric is for, and what happens without it</span></div>
+      <div id="req-body"><div class="skeleton" style="height:120px"></div></div>
+    </section>
+
+    <section class="panel" aria-labelledby="val-h">
+      <div class="section-title"><h2 id="val-h">Regional estimate validation</h2><button class="btn sm" id="run-val">${icon('reset', 'sm')}Run leave-one-out check (yesterday)</button></div>
+      <p class="small muted">Compares raw HRRR, nearest station, station IDW and the experimental residual correction at the three Yuma AZMET stations. Each station is predicted from the other two; only analyses (no future data) are used.</p>
+      <div id="val-body" style="margin-top:8px"></div>
+    </section>
+
     <section class="panel" aria-labelledby="rc-h" id="regional">
       <div class="section-title"><h2 id="rc-h">Regional context</h2><button class="btn sm" id="load-rc">${icon('reset', 'sm')}Load Open-Meteo context</button></div>
       <p class="small muted">Live model estimates for the Yuma area at their native heights. Context only: never used for Go/Stop and not the 5 ft / 30 ft field sensors.</p>
@@ -64,6 +75,23 @@ export async function renderRecords(root) {
     catch (err) { toast(err.message, true); }
   });
   root.querySelector('#load-rc').onclick = () => loadRegional(root.querySelector('#rc-body'));
+  api('/api/requirements').then((r) => {
+    root.querySelector('#req-body').innerHTML = `<div class="table-wrap"><table class="data"><thead><tr><th>Metric</th><th>Group</th><th>Needed for</th><th>Essential</th><th>If unavailable</th></tr></thead><tbody>
+      ${r.register.map((x) => `<tr><td>${esc(x.metric)}</td><td class="small">${esc(x.group)}</td><td class="small">${esc(x.decisions.join(', '))}</td><td>${x.essential ? '<span class="tag sim">Essential</span>' : '<span class="tag">Optional</span>'}</td><td class="small">${esc(x.if_missing)}</td></tr>`).join('')}</tbody></table></div>`;
+  }).catch((e) => { root.querySelector('#req-body').innerHTML = stateBox('error', 'Register unavailable', e.message); });
+  root.querySelector('#run-val').onclick = async () => {
+    const el = root.querySelector('#val-body');
+    el.innerHTML = '<div class="skeleton" style="height:90px"></div><p class="xs muted">Downloading HRRR analyses and AZMET hours; the first run can take a minute.</p>';
+    try {
+      const v = await api('/api/live/validation');
+      if (v.status !== 'ok') { el.innerHTML = stateBox('error', 'Validation unavailable', v.error || 'No data'); return; }
+      const L = { raw_model: 'Raw HRRR 2 m', nearest_station: 'Nearest station', idw_stations: 'IDW of stations', corrected: 'Model + IDW residual (experimental)' };
+      el.innerHTML = `<p class="small">n = <b>${v.n}</b> station-hours · ${esc(v.period)} · ${esc(v.method)}</p>
+        <div class="table-wrap"><table class="data"><thead><tr><th>Method</th><th>MAE °F</th><th>RMSE °F</th><th>Bias °F</th></tr></thead><tbody>
+        ${Object.entries(v.results).map(([k, m]) => `<tr><td>${esc(L[k] || k)}</td><td>${m.mae_f}</td><td>${m.rmse_f}</td><td>${m.bias_f > 0 ? '+' : ''}${m.bias_f}</td></tr>`).join('')}</tbody></table></div>
+        <p class="xs muted" style="margin-top:6px">${esc(v.caveat)}</p>`;
+    } catch (e) { el.innerHTML = stateBox('error', 'Validation unavailable', e.message); }
+  };
 }
 
 async function loadRegional(el) {
