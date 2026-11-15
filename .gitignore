@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CanopyGuard
+data/*.db
+data/*.db-journal
+test-artifacts/
