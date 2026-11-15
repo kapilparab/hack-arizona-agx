@@ -166,7 +166,8 @@ function profileChart(levels) {
 // ------------------------------------------------------------ nozzles
 export function nozzleCards(ev) {
   const ne = ev?.nozzle_engine;
-  if (!ne) return '';
+  if (!ev) return '<div class="skeleton" style="height:80px"></div>';
+  if (!ne) return `<p class="small">${icon('caution', 'sm')} The server returned no nozzle results. It is probably running older code than this page. Stop it and start it again (<code>uvicorn app.main:app</code>), then reload.</p>`;
   if (ne.status === 'not_modelled') {
     return `<div class="nz-empty"><p class="small"><b>No candidates for ${esc((ne.equipment || 'this equipment').toLowerCase())}.</b> ${esc(ne.message)}</p>
       ${ne.needs?.length ? `<div class="k">What a nozzle choice would need</div><ul class="nz-needs">${ne.needs.map((n) => `<li class="${n.value ? 'ok' : 'miss'}">${icon(n.value ? 'go' : 'nodata', 'sm')}<span>${esc(n.label)}</span>
