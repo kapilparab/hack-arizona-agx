@@ -51,16 +51,17 @@ DEMO_NOW = time(5, 30)
 # (katabatic shear, clean window) plus an evening-onset case for the forecaster.
 # Keyframes: hour -> (t_low, t_high, w_low, w_high, dir_low_from, dir_high_from, rh). All SIMULATED.
 
-# Katabatic drainage: cold air slides downslope from the NE at 5 ft while the 30 ft flow is
+# Katabatic drainage: cold air slides downslope from the NW at 5 ft while the 30 ft flow is
 # from the SW and much stronger. No inversion beyond sensor uncertainty, low wind inside the
 # window, so a single low station says Go; the pair shows large speed and direction shear.
 _KAT_S1 = dict(_S1_DAY0)
+_KAT_S1.pop(8.5)  # drop the dawn-inversion keyframe inherited from the base day
 _KAT_S1.update({
-    0: (55, 54.6, 4.5, 11.0, 45, 215, 45), 3: (52, 51.7, 5.0, 12.0, 40, 220, 48),
-    5: (50, 49.7, 5.2, 12.5, 40, 220, 50), 6: (50, 49.8, 5.5, 13.0, 45, 225, 50),
-    7: (52, 51.6, 5.5, 12.0, 50, 225, 48), 8: (56, 55.2, 5.8, 10.0, 60, 230, 44),
-    9: (61, 59.8, 6.0, 8.0, 200, 235, 40), 10: (65, 63, 6.5, 8.0, 230, 240, 36),
-    18: (60, 59.4, 5.0, 8.0, 60, 220, 55), 20: (57, 56.5, 4.5, 10.0, 45, 215, 55), 24: (55, 54.6, 4.5, 11.0, 45, 215, 55)})
+    0: (55, 54.6, 4.5, 11.0, 315, 215, 45), 3: (52, 51.7, 5.0, 12.0, 310, 220, 48),
+    5: (50, 49.7, 5.2, 12.5, 310, 220, 50), 6: (50, 49.8, 5.5, 13.0, 315, 225, 50),
+    7: (52, 51.6, 5.5, 12.0, 315, 225, 48), 8: (56, 55.2, 5.8, 10.0, 300, 230, 44),
+    9: (61, 59.8, 6.0, 8.0, 240, 235, 40), 10: (65, 63, 6.5, 8.0, 230, 240, 36),
+    18: (60, 59.4, 5.0, 8.0, 300, 220, 55), 20: (57, 56.5, 4.5, 10.0, 315, 215, 55), 24: (55, 54.6, 4.5, 11.0, 315, 215, 55)})
 _KAT_S2 = dict(_S2_DAY0)
 _KAT_S2.update({0: (55, 54.9, 4.5, 6.0, 45, 60, 45), 5: (51, 50.8, 5.0, 6.5, 40, 55, 50), 6: (51, 50.9, 5.2, 6.8, 45, 60, 50),
                 7: (53, 52.7, 5.4, 7.0, 50, 60, 48), 9: (62, 60.5, 6.0, 7.5, 210, 230, 38), 24: (55, 54.9, 4.5, 6.0, 45, 60, 55)})
@@ -99,7 +100,7 @@ LIBRARY = {
         "keys": KEYS, "rain": (_RAIN0, _RAIN1), "gaps": GAPS},
     "katabatic-shear": {
         "name": "Katabatic drainage wind shear (simulated)", "now": DEMO_NOW,
-        "description": "Cold air drains downslope from the NE at 5 ft while 30 ft wind blows from the SW at 12-13 mph. "
+        "description": "Cold air drains downslope from the NW at 5 ft while 30 ft wind blows from the SW at 12-13 mph. "
                        "No inversion and 5 ft wind is inside the window, so a single low station says Go; the pair flags "
                        "large speed and direction differences between heights (Field A, mast S1).",
         "shows": "Wind shear between heights", "expected_now": {"S1": "CAUTION"},

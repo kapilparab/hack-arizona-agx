@@ -232,7 +232,7 @@ Adapted from the backend-implementation branch's scenario set. Switch under **Pr
 | ID | Starts | What it shows | Field A (mast S1) at start |
 |---|---|---|---|
 | `yuma-dawn-inversion` (default) | 05:30 | Inversion blind spot: 30 ft is +3.9 °F warmer than 5 ft, 5 ft wind inside the window | Stop; a single low station says Go |
-| `katabatic-shear` | 05:30 | Cold drainage from the NE at 5 ft (~5 mph) under a 12-13 mph SW flow at 30 ft; no inversion | Caution for speed and direction shear; a single low station says Go |
+| `katabatic-shear` | 05:30 | Cold drainage from the NW at 5 ft (~5 mph) under a 12-13 mph SW flow at 30 ft; no inversion | Caution for speed and direction shear; a single low station says Go |
 | `evening-onset` | 17:00 | Mixed air and wind in the window now; an inversion forms after sunset | Go now; the ML outlook warns "likely to turn bad by 19:00" |
 | `well-mixed` | 05:30 | Steady 5-8 mph breeze, upper air cooler all day | Go: the tool does not always say Stop |
 

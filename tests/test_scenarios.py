@@ -17,8 +17,10 @@ def restore_default():
 
 
 def _assess_a():
+    """Field A as the app assesses it: with the demo's sensitive areas and its open job's product."""
     f = demo_data.field("A")
-    return engine.assess(SCENARIO.reading("S1", SCENARIO.now), SCENARIO.now, f, [], None, {})
+    from app import catalog
+    return engine.assess(SCENARIO.reading("S1", SCENARIO.now), SCENARIO.now, f, demo_data.SENSITIVE, catalog.PRODUCTS["demo_r"], {})
 
 
 @pytest.mark.parametrize("sid", list(LIBRARY))
@@ -59,6 +61,20 @@ def test_api_select_switches_clock_and_records():
     recs = client.get("/api/records", params={"kind": "scenario"}).json()
     items = recs["records"] if isinstance(recs, dict) else recs
     assert any("Evening inversion onset" in x["summary"] for x in items)
+
+
+@pytest.mark.parametrize("sid", list(LIBRARY))
+def test_api_status_matches_scenario_claim(sid):
+    """End to end through the API, so neighbor constraints and products are included."""
+    client.post("/api/scenario/select", json={"id": sid})
+    assert client.get("/api/assess", params={"field_id": "A"}).json()["status"] == LIBRARY[sid]["expected_now"]["S1"]
+
+
+def test_katabatic_shear_stays_caution_through_the_morning():
+    client.post("/api/scenario/select", json={"id": "katabatic-shear"})
+    for t in ("05:30", "06:30", "07:30"):
+        a = client.get("/api/assess", params={"field_id": "A", "time": SCENARIO.now.isoformat()[:11] + t}).json()
+        assert a["status"] == "CAUTION", (t, [c["id"] for c in a["checks"] if c["status"] != "GO"])
 
 
 def test_api_lists_library_and_rejects_unknown():
