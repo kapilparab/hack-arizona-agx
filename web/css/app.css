@@ -853,3 +853,9 @@ body.hide-demo .sim-badge, body.hide-demo .sim-fab:not([aria-expanded="true"]) {
 .sf-h{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
 .sf-v{font-size:.72rem;font-weight:600;color:var(--text-2);white-space:nowrap}
 .sf .small{margin-top:2px}
+.nz-empty .k{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-2);margin:10px 0 4px}
+.nz-needs{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:6px}
+.nz-needs li{display:grid;grid-template-columns:auto 1fr;column-gap:8px;align-items:start;font-size:.85rem}
+.nz-needs li .xs{grid-column:2}
+.nz-needs li.ok .ic{color:var(--go)}
+.nz-needs li.miss .ic{color:var(--text-3)}

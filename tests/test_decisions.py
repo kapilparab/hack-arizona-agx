@@ -108,3 +108,15 @@ def test_schedule_start_decision_matches_status_screen():
     fid = next(j for j in c.get("/api/jobs").json() if j["id"] == r["job_id"])["field_id"]
     a = c.get("/api/assess", params={"field_id": fid, "time": r["start"]}).json()
     assert r["start_decision_id"] == a["decision_id"]
+
+
+def test_airblast_nozzles_explain_what_is_missing():
+    c = TestClient(app)
+    c.post("/api/scenario/reset", json={})
+    ev = c.post("/api/equipment/evaluate", json={"field_id": "D", "unit_id": "U2"}).json()
+    ne = ev["nozzle_engine"]
+    assert ne["status"] == "not_modelled" and ne["candidates"] == []
+    needs = {n["label"]: n for n in ne["needs"]}
+    assert needs["Tree height"]["value"] == "12.0 ft"            # from the field record
+    assert needs["Skirt height"]["value"] is None                 # unknowns stay explicit
+    assert ne["advisor"]["url"].startswith("https://ucanr.edu")
