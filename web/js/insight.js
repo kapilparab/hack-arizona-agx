@@ -167,7 +167,13 @@ function profileChart(levels) {
 export function nozzleCards(ev) {
   const ne = ev?.nozzle_engine;
   if (!ne) return '';
-  if (ne.status === 'not_modelled' || ne.status === 'blocked') return `<p class="small muted">${esc(ne.message)}</p>`;
+  if (ne.status === 'not_modelled') {
+    return `<div class="nz-empty"><p class="small"><b>No candidates for ${esc((ne.equipment || 'this equipment').toLowerCase())}.</b> ${esc(ne.message)}</p>
+      ${ne.needs?.length ? `<div class="k">What a nozzle choice would need</div><ul class="nz-needs">${ne.needs.map((n) => `<li class="${n.value ? 'ok' : 'miss'}">${icon(n.value ? 'go' : 'nodata', 'sm')}<span>${esc(n.label)}</span>
+        <span class="xs muted">${n.value ? esc(n.value) + ' · ' + esc(n.source) : 'Not entered'}</span></li>`).join('')}</ul>` : ''}
+      <p class="xs">${esc(ne.next_step || '')}${ne.advisor ? ` <a href="${esc(ne.advisor.url)}" target="_blank" rel="noopener">${esc(ne.advisor.name)}</a>` : ''}</p></div>`;
+  }
+  if (ne.status === 'blocked') return `<p class="small muted">${esc(ne.message)}</p>`;
   const card = (c) => `<div class="nz ${c.id === ne.recommended ? 'rec' : ''}">
     <div class="nz-h"><img src="img/nozzle-${c.family === 'AIXR' ? 'airinduction' : 'flatfan'}.svg" alt="" class="nz-img">
       <div><b>${esc(c.model)}</b>${c.id === ne.recommended ? ' <span class="opt-state rec">Recommended</span>' : c.selected ? ' <span class="tag">Configured</span>' : ''}

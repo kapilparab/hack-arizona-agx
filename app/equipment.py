@@ -177,8 +177,10 @@ def evaluate(field: dict, unit_id: str, cfg_override: dict | None, product: dict
                                "missing": [] if n["verified"] else ["Pressure-dependent droplet classification for the chosen size (manufacturer chart)"]})
     recommendation = {
         "status": "comparison_only",
-        "message": "No nozzle is recommended: verified pressure-dependent droplet data is not loaded in this build. "
-                   "Compare candidates and read the class for your tip size and pressure from the manufacturer chart.",
+        "message": ("Compatible nozzle families for reference. Sized candidates with documented droplet classes are under "
+                    "Nozzle candidates (TeeJet tables)." if utype == "ground_boom" else
+                    "Compatible atomizers for reference only. Observair does not size nozzles for this equipment type; "
+                    "read the droplet class for your setting from the manufacturer chart."),
     }
     nozzle_eval = None
     if utype == "ground_boom":
@@ -188,9 +190,36 @@ def evaluate(field: dict, unit_id: str, cfg_override: dict | None, product: dict
                                        release_height_in=cfg.get("boom_height_in"),
                                        configured=f"{fam}110{cfg.get('orifice_size')}" if fam else None)
     elif utype == "airblast":
-        nozzle_eval = {"status": "not_modelled", "candidates": [], "message": "Airblast nozzle/airflow selection depends on canopy and fan settings that are not modelled here. Use the UC Airblast Spray Advisor; ground-boom formulas are not applied to airblast."}
+        have = lambda v, src: {"value": v, "source": src} if v not in (None, "") else {"value": None, "source": "Not entered"}
+        nozzle_eval = {
+            "status": "not_modelled", "candidates": [], "equipment": "Airblast sprayer",
+            "message": "Airblast nozzle and airflow selection depends on the tree canopy and fan settings, which Observair does not model. "
+                       "TeeJet boom tables and the boom flow formula do not apply to airblast, so no candidates are listed.",
+            "advisor": et.get("advisor"),
+            # Inputs the UC Airblast Spray Advisor asks for (ucanr.edu inputs page); shown so the gap is explicit.
+            "needs": [
+                {"label": "Tree height", **have(field.get("canopy_ft") and f"{field['canopy_ft']} ft", "Field record (demo)")},
+                {"label": "Row spacing", **have(cfg.get("row_spacing_ft") and f"{cfg['row_spacing_ft']} ft", "Rig configuration")},
+                {"label": "Skirt height", **have(None, "")}, {"label": "Canopy diameter", **have(None, "")},
+                {"label": "Missing trees (%)", **have(None, "")},
+                {"label": "Temperature, humidity and wind at the block", **have(None, "")},
+                {"label": "Sprayer model and nozzle type", **have((catalog.NOZZLES.get(cfg.get("nozzle_id")) or {}).get("model"), "Rig configuration")},
+            ],
+            "next_step": "Enter these in the UC Airblast Spray Advisor (citrus model) and record the result. Nozzle candidates are computed for ground-boom rigs only.",
+        }
     elif utype == "drone":
-        nozzle_eval = {"status": "not_modelled", "candidates": [], "message": "Drone centrifugal atomizers are configured by droplet size (µm), flow, swath, speed and height. TeeJet ground-boom formulas and compatibility are not applied."}
+        nozzle_eval = {
+            "status": "not_modelled", "candidates": [], "equipment": "Spray drone",
+            "message": "Spray drones use rotary atomizers set by droplet size in µm, not TeeJet tips, so the boom tables and flow formula do not apply.",
+            "needs": [{"label": "ASABE droplet class for this atomizer setting (manufacturer chart)", "value": None, "source": "Not entered"}],
+            "next_step": "Confirm the droplet class for the atomizer setting from the manufacturer, then enter it in Advanced equipment configuration.",
+        }
+    elif utype == "aircraft":
+        nozzle_eval = {
+            "status": "not_modelled", "candidates": [], "equipment": "Aircraft",
+            "message": "Aerial nozzle selection depends on airspeed, boom and nozzle angle (e.g. USDA-ARS aerial models), which Observair does not model.",
+            "needs": [], "next_step": "Use the applicator's calibrated setup and the USDA-ARS aerial nozzle models.",
+        }
     blocking = [i for i in issues if i["severity"] == "block"]
     return {"unit": {k: u[k] for k in ("id", "name", "type", "crew", "shift")}, "type_info": {k: et.get(k) for k in ("name", "illustration", "illustration_note", "reference", "advisor", "unsupported")},
             "config": cfg, "config_source": u["config_source"], "issues": issues, "compatible": not blocking,
