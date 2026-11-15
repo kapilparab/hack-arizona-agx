@@ -379,7 +379,7 @@ function renderSetup() {
     ${liquidCard(job, V.ev, job && planFor(job.id))}
     ${terrainCard(V.terrainStats?.[fid], V.profiles[fid])}
     <div class="side-sec">
-      ${V.ev?.unit?.type === 'ground_boom' || V.ev?.nozzle_engine ? `<details class="fold" ${V.nozzleOpen ? 'open' : ''} id="nozzle-fold"><summary>Nozzle candidates (TeeJet guide)</summary>${nozzleCards(V.ev)}</details>` : ''}
+      ${V.ev?.unit?.type === 'ground_boom' || V.ev?.nozzle_engine ? `<details class="fold" ${V.nozzleOpen ? 'open' : ''} id="nozzle-fold"><summary>${V.ev?.nozzle_engine?.status === 'not_modelled' ? `Nozzles · not sized for ${esc((V.ev.nozzle_engine.equipment || 'this rig').toLowerCase())}` : `Nozzle candidates (TeeJet tables)${(() => { const n = V.ev?.nozzle_engine?.candidates?.length || 0; return n > 4 ? ` · top 4 of ${n}` : n ? ` · ${n}` : ''; })()}`}</summary>${nozzleCards(V.ev)}</details>` : ''}
       <details class="fold"><summary>Advanced equipment configuration</summary>
         ${equipmentPanel(V.ev, state.catalog, V.unitId, { noCards: true })}
         <div class="field" style="margin-top:12px"><label for="orient">Pass orientation · ${V.orientation}° (0 = north–south)</label>
