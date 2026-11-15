@@ -2,7 +2,7 @@ import copy
 import os
 from datetime import date, datetime, timedelta
 
-os.environ["CANOPYGUARD_DB"] = ":memory:"
+os.environ["OBSERVAIR_DB"] = ":memory:"
 
 import pytest  # noqa: E402
 

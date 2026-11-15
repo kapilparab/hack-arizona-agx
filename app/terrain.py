@@ -22,7 +22,7 @@ from app.config import MST
 CACHE = os.path.join(os.path.dirname(__file__), "..", "data", "cache", "terrain")
 SERVICE = "https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer"
 EPQS = "https://epqs.nationalmap.gov/v1/json"
-UA = {"User-Agent": "CanopyGuard-prototype/0.1"}
+UA = {"User-Agent": "Observair-prototype/0.1"}
 SOURCE = {"name": "USGS 3D Elevation Program (3DEP) Bare Earth DEM", "url": "https://www.usgs.gov/3d-elevation-program",
           "service": SERVICE, "units": "m", "vertical_datum": "NAVD88 (as published by 3DEP)",
           "note": "Native 3DEP resolution varies by location (1 m lidar where available, otherwise 1/3 arc-second ~10 m). The EPQS point service reports the native resolution used."}

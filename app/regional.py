@@ -35,7 +35,7 @@ def fetch(lat=32.66, lon=-114.72, opener=urllib.request.urlopen):
     if hit and now - hit["_t"] < FRESH_S:
         return {**hit["data"], "cache": "fresh"}
     try:
-        req = urllib.request.Request(URL.format(lat=lat, lon=lon), headers={"User-Agent": "CanopyGuard-prototype"})
+        req = urllib.request.Request(URL.format(lat=lat, lon=lon), headers={"User-Agent": "Observair-prototype"})
         with opener(req, timeout=5) as r:
             raw = json.loads(r.read().decode())
         cur = raw.get("current") or {}

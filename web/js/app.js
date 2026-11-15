@@ -25,7 +25,7 @@ async function route() {
   document.querySelectorAll('[data-route]').forEach((a) => {
     if (a.dataset.route === r) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
-  document.title = `${TITLES[r]} · CanopyGuard`;
+  document.title = `${TITLES[r]} · Observair`;
   document.body.classList.toggle('on-map', r === 'map');
   document.body.classList.toggle('on-today', r === 'today');
   document.body.classList.toggle('cg-board', BOARD.has(r));
@@ -43,7 +43,7 @@ async function boot() {
   try {
     await loadBase();
   } catch (e) {
-    main.innerHTML = `<div class="page">${stateBox('error', 'CanopyGuard could not start', e.message + ' Start the server (see README) and reload.',
+    main.innerHTML = `<div class="page">${stateBox('error', 'Observair could not start', e.message + ' Start the server (see README) and reload.',
       '<button class="btn sm" style="margin-top:8px" onclick="location.reload()">Reload</button>')}</div>`;
     return;
   }

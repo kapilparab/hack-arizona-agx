@@ -19,7 +19,7 @@ export async function api(path, opts = {}) {
     res = await fetch(path, init);
   } catch (e) {
     setOnline(false);
-    throw new ApiError('Cannot reach the CanopyGuard server. Check the connection; showing the last loaded data.', 0);
+    throw new ApiError('Cannot reach the Observair server. Check the connection; showing the last loaded data.', 0);
   }
   setOnline(true);
   if (!res.ok) {

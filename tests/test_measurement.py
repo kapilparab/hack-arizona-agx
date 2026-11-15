@@ -2,7 +2,7 @@
 import os
 from datetime import datetime, timedelta
 
-os.environ.setdefault("CANOPYGUARD_DB", ":memory:")
+os.environ.setdefault("OBSERVAIR_DB", ":memory:")
 
 from app import engine, nozzles, profile, realdata  # noqa: E402
 from app.config import MST  # noqa: E402
@@ -94,3 +94,19 @@ def test_live_data_failure_is_explicit_not_simulated(monkeypatch, tmp_path):
     assert r["status"] == "unavailable" and "periods" not in r
     m = realdata.station_meta("az02")
     assert m["status"] == "unavailable"
+
+
+def test_vector_direction_interpolation_wraps_north():
+    ip = profile.ProfileInterpolator([], [(2.0, 5.0, 350.0), (8.0, 5.0, 10.0)])
+    s, d = ip.wind(5.0)
+    assert s is not None and (d < 1 or d > 359)       # not 180 (naive degree average)
+
+
+def test_spray_plane_within_range_only():
+    r = rd(lv(5, "ground", 50, 4, 0), lv(30, "ground", 55, 8, 20))
+    sp = profile.spray_plane(10.0, r, 1.0)                # 10 ft AGL; +1 m ~13.3 ft, +3 m ~19.8 ft: inside 5-30 ft
+    assert all(x["status"] == "interpolated" for x in sp["rows"]) and sp["rows"][0]["dt_f"] > 0
+    sp2 = profile.spray_plane(2.0, r, 1.0)                # release below lowest sensor: no values
+    assert sp2["rows"][0]["dt_f"] is None
+    sp3 = profile.spray_plane(28.0, r, 1.0)               # +1 m / +3 m above the top sensor: refused
+    assert all(x["dt_f"] is None for x in sp3["rows"])

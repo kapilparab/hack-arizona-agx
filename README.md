@@ -1,6 +1,6 @@
-# CanopyGuard
+# Observair
 
-Spray-window planning for farmers and Pest Control Advisers (PCAs). Treatment has already been decided by pest scouting or a spray schedule. CanopyGuard answers: **given the target date, available equipment, local weather and neighboring fields, what is the earliest suitable opportunity to complete this job?**
+Spray-window planning for farmers and Pest Control Advisers (PCAs). Treatment has already been decided by pest scouting or a spray schedule. Observair answers: **given the target date, available equipment, local weather and neighboring fields, what is the earliest suitable opportunity to complete this job?**
 
 It is decision support only. It does not diagnose pests, choose pesticides, recommend rates, predict exposure or drift distance, guarantee zero drift, or control equipment. **Go means no configured flags were detected, not guaranteed safety.**
 
@@ -18,13 +18,13 @@ python -m venv .venv
 
 Open http://127.0.0.1:8000. For a phone on the same network, open `http://<your-computer-LAN-IP>:8000`. The frontend uses same-origin `/api` routes, so no URL changes are needed. Allow port 8000 through the firewall if the phone can't connect.
 
-- Data is stored in `data/canopyguard.db` (SQLite). Set `CANOPYGUARD_DB` to change it.
+- Data is stored in `data/observair.db` (SQLite). Set `OBSERVAIR_DB` to change it.
 - **Replay demo** on the Today page resets requests, alerts and scenario events.
 - MapLibre is vendored in `web/vendor`. Fonts, basemap tiles and terrain load from the internet. Offline, the map still draws the fictional overlays on a plain background. If WebGL is unavailable, a 2D SVG schematic is used.
 
 Tests: `.venv/Scripts/python -m pytest -q` (50 tests).
 
-Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic credentials (e.g. `ANTHROPIC_API_KEY`), then set `CANOPYGUARD_AI=1`. Claude (`claude-opus-5-5`, server-side refusal fallback enabled) only rephrases the rule-based engine lines it is given. Any failure or refusal falls back to the rule-based text. The key stays on the server. **This path was not exercised during the build** (no credentials were configured); the rule-based path is what the demo uses and what was tested.
+Optional AI-phrased explanations: `pip install anthropic`, configure Anthropic credentials (e.g. `ANTHROPIC_API_KEY`), then set `OBSERVAIR_AI=1`. Claude (`claude-opus-5-5`, server-side refusal fallback enabled) only rephrases the rule-based engine lines it is given. Any failure or refusal falls back to the rule-based text. The key stays on the server. **This path was not exercised during the build** (no credentials were configured); the rule-based path is what the demo uses and what was tested.
 
 ## What it does
 

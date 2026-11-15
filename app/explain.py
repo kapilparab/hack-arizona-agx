@@ -1,7 +1,7 @@
 """Explanations grounded only in engine outputs.
 
 Default: deterministic rule-based templates (EN/ES), labeled as such.
-Optional: if CANOPYGUARD_AI=1 and Anthropic credentials are configured, Claude
+Optional: if OBSERVAIR_AI=1 and Anthropic credentials are configured, Claude
 rephrases the SAME facts. It is told not to add readings, rates, product
 restrictions, or override blocking conditions. Any failure falls back to the
 rule-based text. Credentials are read server-side only and never sent to the browser."""
@@ -250,7 +250,7 @@ SYSTEM = ("You rephrase decision-support explanations for farm spray applicators
 
 
 def ai_available():
-    if os.environ.get("CANOPYGUARD_AI") != "1":
+    if (os.environ.get("OBSERVAIR_AI") or os.environ.get("CANOPYGUARD_AI")) != "1":  # legacy name still accepted
         return False
     try:
         import anthropic  # noqa: F401

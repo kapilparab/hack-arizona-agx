@@ -12,7 +12,7 @@ Pest Control Advisers (PCAs) and farmers in the Yuma, Arizona vegetable and citr
 
 ## Product Purpose
 
-CanopyGuard plans spray windows. The treatment is already decided by pest scouting or a spray schedule. CanopyGuard answers: given the target date, available equipment, local weather and neighboring fields, what is the earliest suitable opportunity to complete this job? Success is a crew leaving at the right time, for the right field, without spraying into a temperature inversion.
+Observair plans spray windows. The treatment is already decided by pest scouting or a spray schedule. Observair answers: given the target date, available equipment, local weather and neighboring fields, what is the earliest suitable opportunity to complete this job? Success is a crew leaving at the right time, for the right field, without spraying into a temperature inversion.
 
 ## Positioning
 

@@ -10,7 +10,8 @@ import threading
 from datetime import datetime, timedelta
 from app.config import MST, RULE_VERSION
 
-DB_PATH = os.environ.get("CANOPYGUARD_DB", os.path.join(os.path.dirname(__file__), "..", "data", "canopyguard.db"))
+DB_PATH = (os.environ.get("OBSERVAIR_DB") or os.environ.get("CANOPYGUARD_DB")
+           or os.path.join(os.path.dirname(__file__), "..", "data", "observair.db"))
 _lock = threading.RLock()  # one shared connection: serialize ALL access, reads included
 
 SCHEMA = """

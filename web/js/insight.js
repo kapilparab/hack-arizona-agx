@@ -25,6 +25,11 @@ export function releaseSection(a) {
         <div class="s">${esc(w.method || w.reason || '')}${w.from_levels ? ` from ${esc(w.from_levels)}` : ''}${w.roughness ? ` · d ${w.roughness.d_ft} ft, z₀ ${w.roughness.z0_ft} ft` : ''}</div>
         <div class="s" style="color:${w.status === 'estimated_unreliable' ? 'var(--caution)' : 'inherit'}">${esc(w.validity || '')}</div></div>
     </div>
+    ${r.spray_plane?.status === 'ok' ? `<div class="table-wrap" style="margin-top:10px"><table class="data"><thead><tr><th>Above release</th><th>ΔT</th><th>Wind change</th></tr></thead><tbody>
+      ${r.spray_plane.rows.map((x) => `<tr><td>+${x.offset_m} m <span class="xs muted">(${x.height_agl_ft} ft AGL)</span></td>
+        <td>${x.dt_f == null ? '<span class="xs muted">outside measured range</span>' : `<b style="color:${x.dt_f > 0 ? 'var(--stop)' : 'inherit'}">${x.dt_f > 0 ? '+' : ''}${x.dt_f} °F</b>`}</td>
+        <td>${x.speed_change_mph == null ? '<span class="xs muted">not available</span>' : `${x.speed_change_mph > 0 ? '+' : ''}${x.speed_change_mph} mph, ${x.dir_change_deg}°`}</td></tr>`).join('')}</tbody></table></div>
+      <p class="value-basis">Spray plane: ${esc(r.spray_plane.method)}. ${esc(r.spray_plane.note)} Warmer air above the release height means droplets are released under a stable layer.</p>` : ''}
     <p class="value-basis">${esc(r.note)} Wind method: FAO-56 logarithmic profile (d = ⅔h, z₀ = 0.123h).</p></div>`;
 }
 

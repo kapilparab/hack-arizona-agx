@@ -26,7 +26,7 @@ import numpy as np
 from app.config import MST
 
 CACHE = os.path.join(os.path.dirname(__file__), "..", "data", "cache")
-UA = {"User-Agent": "CanopyGuard-prototype/0.1 (hackathon demo)"}
+UA = {"User-Agent": "Observair-prototype/0.1 (hackathon demo)"}
 STATIONS = ["az02", "az14", "az36"]           # Yuma Valley, Yuma N.Gila, Yuma South
 BBOX = (-114.85, 32.50, -114.40, 32.85)       # HRRR subset (lon/lat)
 HRRR_RES = "3 km native grid (HRRR)"

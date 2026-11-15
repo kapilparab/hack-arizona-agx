@@ -130,3 +130,87 @@ def analyze_model_profile(levels):
     return {"status": "ok", "layers": layers, "regime": regime, "inversion_top_m": top, "surface_inversion_strength_f": strength,
             "lowest_level_m": lv[0]["height_agl_m"],
             "resolution_note": f"The lowest model level is about {lv[0]['height_agl_m']:.0f} m above model ground, so a shallow inversion between 6 in and 10 ft is not resolved. This never overrides local sensors."}
+
+
+# ---------------------------------------------------------------------------
+# Multi-level interpolation and spray-plane analysis (ported from the
+# backend-implementation branch's AtmosphericProfileInterpolator, with two
+# changes: no extrapolation outside measured heights, and wind direction
+# interpolated through speed-weighted u/v components).
+def _pchip(xs, ys):
+    from scipy.interpolate import PchipInterpolator
+    order = sorted(range(len(xs)), key=lambda i: xs[i])
+    xs, ys = [xs[i] for i in order], [ys[i] for i in order]
+    if len(xs) < 2 or xs[0] == xs[-1]:
+        return None, None
+    return PchipInterpolator(xs, ys, extrapolate=False), (xs[0], xs[-1])
+
+
+def _levels(reading, canopy_ft):
+    t, w = [], []
+    for lv in (reading["lower"], reading["upper"]):
+        if lv.get("temp_f") is not None:
+            t.append((_agl_ft(lv["height_ft"], lv["ref"], canopy_ft) * FT, lv["temp_f"]))
+        if lv.get("wind_installed", True) and lv.get("wind_mph") is not None and lv.get("dir_from_deg") is not None:
+            w.append((_agl_ft(lv.get("wind_height_ft", lv["height_ft"]), lv.get("wind_ref", lv["ref"]), canopy_ft) * FT, lv["wind_mph"], lv["dir_from_deg"]))
+    return t, w
+
+
+class ProfileInterpolator:
+    """Shape-preserving (PCHIP) interpolation across all measured levels. Returns None
+    outside the measured range rather than extrapolating."""
+
+    def __init__(self, t_levels, w_levels):
+        self.t, self.t_rng = _pchip([z for z, _ in t_levels], [v for _, v in t_levels]) if len(t_levels) >= 2 else (None, None)
+        if len(w_levels) >= 2:
+            zs = [z for z, _, _ in w_levels]
+            self.spd, self.w_rng = _pchip(zs, [s for _, s, _ in w_levels])
+            rad = [math.radians(d) for _, _, d in w_levels]
+            self.u, _ = _pchip(zs, [-s * math.sin(r) for (_, s, _), r in zip(w_levels, rad)])
+            self.v, _ = _pchip(zs, [-s * math.cos(r) for (_, s, _), r in zip(w_levels, rad)])
+        else:
+            self.spd = self.u = self.v = self.w_rng = None
+
+    def temperature(self, z_m):
+        if self.t is None:
+            return None
+        v = float(self.t(z_m))
+        return None if math.isnan(v) else v
+
+    def wind(self, z_m):
+        if self.spd is None:
+            return None, None
+        s = float(self.spd(z_m))
+        if math.isnan(s):
+            return None, None
+        u, v = float(self.u(z_m)), float(self.v(z_m))
+        return s, (math.degrees(math.atan2(-u, -v)) + 360) % 360
+
+
+def spray_plane(release_agl_ft, reading, canopy_ft, offsets_m=(1.0, 3.0)):
+    """Temperature difference and wind change from the release height to +1 m and +3 m above it,
+    using only measured heights (no extrapolation). A positive difference means warmer air above
+    the release height - an inversion layer that release droplets would sit under."""
+    from app.geo import angle_diff
+    if not reading:
+        return {"status": "unavailable", "reason": "No paired reading."}
+    t_lv, w_lv = _levels(reading, canopy_ft)
+    ip = ProfileInterpolator(t_lv, w_lv)
+    z0 = release_agl_ft * FT
+    t0 = ip.temperature(z0)
+    s0, d0 = ip.wind(z0)
+    rows = []
+    for dz in offsets_m:
+        z = z0 + dz
+        t = ip.temperature(z)
+        s, d = ip.wind(z)
+        rows.append({"offset_m": dz, "height_agl_ft": round(z / FT, 1),
+                     "dt_f": None if (t is None or t0 is None) else round(t - t0, 2),
+                     "speed_change_mph": None if (s is None or s0 is None) else round(s - s0, 2),
+                     "dir_change_deg": None if (d is None or d0 is None) else round(angle_diff(d, d0)),
+                     "status": "interpolated" if (t is not None and t0 is not None) else "outside_measured_range"})
+    rng = ip.t_rng
+    return {"status": "ok", "release_agl_ft": release_agl_ft, "rows": rows,
+            "measured_temp_range_ft_agl": [round(rng[0] / FT, 2), round(rng[1] / FT, 2)] if rng else None,
+            "method": "PCHIP across measured levels (linear when only two), wind direction via u/v components; no extrapolation",
+            "note": "Within-layer values are interpolated between sensors, not measured at these heights. A two-sensor mast gives a straight-line profile."}

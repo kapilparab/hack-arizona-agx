@@ -67,7 +67,7 @@ export async function renderToday(root) {
       <div class="side">
         <section class="side-block" aria-labelledby="att-h">
           <div class="block-title"><h2 id="att-h">Fields needing attention</h2><span class="muted small">at ${hm(now)}</span></div>
-          ${blind.length ? `<p class="marker-note">${icon('temp', 'sm')}<span>Inversion on ${esc(blind.map((f) => fieldName(f.field_id)).join(', '))}: fine droplets can stay suspended in the stable layer. A 5 ft station alone would say Go there.</span></p>` : ''}
+          ${blind.length ? `<p class="marker-note">${icon('temp', 'sm')}<span>Inversion on ${esc(blind.map((f) => fieldName(f.field_id)).join(', '))}: fine droplets can stay suspended in the stable layer. A single low station alone would say Go there.</span></p>` : ''}
           ${attention.length ? `<ul class="flags">${attention.map((f) => `
             <li>${chip(f.status)}<div>
               <p class="flag-name">${esc(fieldName(f.field_id))}</p>
@@ -92,7 +92,7 @@ export async function renderToday(root) {
 
     <section class="requests" aria-labelledby="req-h">
       <div class="block-title"><h2 id="req-h">Treatment requests</h2><a class="small" href="#/schedule">Edit requests</a></div>
-      <p class="small muted req-note">Treatment need comes from the PCA or the spray schedule. CanopyGuard only times the work.</p>
+      <p class="small muted req-note">Treatment need comes from the PCA or the spray schedule. Observair only times the work.</p>
       <table class="req-table">
         <thead><tr><th scope="col">Field</th><th scope="col">Reference</th><th scope="col">Window requested</th><th scope="col">Priority</th><th scope="col">Plan</th></tr></thead>
         <tbody>${open.map((j) => {

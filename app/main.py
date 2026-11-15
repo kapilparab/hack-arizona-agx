@@ -1,4 +1,4 @@
-"""CanopyGuard API + static web app (same origin, so it works from phones on the LAN)."""
+"""Observair API + static web app (same origin, so it works from phones on the LAN)."""
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -14,7 +14,7 @@ from app.config import DEFAULT_THRESHOLDS, MST, RULE_VERSION, thresholds
 from app.geo import to_xy
 from app.scenario import SCENARIO
 
-app = FastAPI(title="CanopyGuard - spray-window decision support (prototype)", version=RULE_VERSION)
+app = FastAPI(title="Observair - spray-window decision support (prototype)", version=RULE_VERSION)
 WEB = os.path.join(os.path.dirname(__file__), "..", "web")
 STATE = {"overrides": {}, "plan": None}
 
@@ -67,6 +67,8 @@ def _assess(fid, at, product_id=None):
         cfg = {**u["config"], **(job.get("config_override") or {})}
         inv = any(c["id"] == "inversion" and c["status"] in ("STOP", "CAUTION") for c in a["checks"])
         a["at_release"] = profile.at_release(u["type"], cfg, rd, f.get("canopy_ft"), inv)
+        if a["at_release"].get("status") == "ok":
+            a["at_release"]["spray_plane"] = profile.spray_plane(a["at_release"]["release"]["agl_ft"], rd, f.get("canopy_ft"))
         a["at_release"]["unit"] = u["name"]
     a["field_terrain"] = _TERRAIN_STATS.get(fid)
     return a
@@ -387,7 +389,7 @@ def snapshot(body: dict = Body(default={})):
 @app.get("/api/records/export.csv")
 def export():
     return Response(store.export_csv(), media_type="text/csv",
-                    headers={"Content-Disposition": "attachment; filename=canopyguard_records.csv"})
+                    headers={"Content-Disposition": "attachment; filename=observair_records.csv"})
 
 
 # ---------------------------------------------------------------- regional
