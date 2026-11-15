@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Observair
+data/*.db
+data/*.db-journal
+test-artifacts/
+data/cache/

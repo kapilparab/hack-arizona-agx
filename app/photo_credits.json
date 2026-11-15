@@ -1,0 +1,74 @@
+{
+ "crop-romaine": {
+  "file": "img/photos/crop-romaine.jpg",
+  "title": "Lettuce farm-impasug-ong3.JPG",
+  "artist": "Kleomarlo",
+  "license": "CC BY-SA 4.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Lettuce_farm-impasug-ong3.JPG",
+  "modified": "Resized"
+ },
+ "crop-broccoli": {
+  "file": "img/photos/crop-broccoli.jpg",
+  "title": "PYO Broccoli, Garson's Farm, Esher - geograph.org.uk - 6250930.jpg",
+  "artist": "Mike Pennington",
+  "license": "CC BY-SA 2.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:PYO_Broccoli,_Garson%27s_Farm,_Esher_-_geograph.org.uk_-_6250930.jpg",
+  "modified": "Resized"
+ },
+ "crop-cauliflower": {
+  "file": "img/photos/crop-cauliflower.jpg",
+  "title": "Cauliflower field - geograph.org.uk - 1731534.jpg",
+  "artist": "Elizabeth Scott",
+  "license": "CC BY-SA 2.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Cauliflower_field_-_geograph.org.uk_-_1731534.jpg",
+  "modified": "Resized"
+ },
+ "crop-lemon": {
+  "file": "img/photos/crop-lemon.jpg",
+  "title": "103782 moshav tlamim - lemon orchard PikiWiki Israel.jpg",
+  "artist": "ליזי שאנן",
+  "license": "CC BY 2.5",
+  "license_url": "https://creativecommons.org/licenses/by/2.5",
+  "source": "https://commons.wikimedia.org/wiki/File:103782_moshav_tlamim_-_lemon_orchard_PikiWiki_Israel.jpg",
+  "modified": "Resized"
+ },
+ "equip-boom": {
+  "file": "img/photos/equip-boom.jpg",
+  "title": "John Deere 5430 self propelled sprayer - 4768.jpg",
+  "artist": "BulldozerD11",
+  "license": "CC BY-SA 3.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+  "source": "https://commons.wikimedia.org/wiki/File:John_Deere_5430_self_propelled_sprayer_-_4768.jpg",
+  "modified": "Background removed and placed on white"
+ },
+ "equip-drone": {
+  "file": "img/photos/equip-drone.jpg",
+  "title": "XAG drone, Agritechnica 2023, Hanover (P1160326).jpg",
+  "artist": "MB-one",
+  "license": "CC BY-SA 4.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:XAG_drone,_Agritechnica_2023,_Hanover_(P1160326).jpg",
+  "modified": "Background removed and placed on white"
+ },
+ "equip-airblast": {
+  "file": "img/photos/equip-airblast.jpg",
+  "title": "Holder C250 with vineyard sprayer.jpg",
+  "artist": "Ubraxa",
+  "license": "CC BY-SA 4.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+  "source": "https://commons.wikimedia.org/wiki/File:Holder_C250_with_vineyard_sprayer.jpg",
+  "modified": "Background removed and placed on white; shows a vineyard/orchard tower sprayer, not a classic orchard airblast"
+ },
+ "equip-aircraft": {
+  "file": "img/photos/equip-aircraft.jpg",
+  "title": "Kennedy Aviation (VH-XAV) Air Tractor AT-802 taxiing at Wagga Wagga Airport.jpg",
+  "artist": "Bidgee",
+  "license": "CC BY-SA 3.0 au",
+  "license_url": "https://creativecommons.org/licenses/by-sa/3.0/au/deed.en",
+  "source": "https://commons.wikimedia.org/wiki/File:Kennedy_Aviation_(VH-XAV)_Air_Tractor_AT-802_taxiing_at_Wagga_Wagga_Airport.jpg",
+  "modified": "Background removed and placed on white"
+ }
+}
