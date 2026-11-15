@@ -95,6 +95,10 @@ function render() {
         <div class="toggle-row"><span class="t">Color fields by</span>${seg('colorby', [['status', 'Decision'], ['inversion', 'ΔT'], ['none', 'Off']], ui.colorBy, 'Color fields by')}</div>
         ${sw('sim-areas', ui.showAreas, 'Sensitive areas and exclusions')}
         ${sw('sim-passes', ui.showPasses, 'Application passes')}</section>` : `
+      <section class="sim-sec"><h3>Scenario</h3><p class="hint">Switch the simulated weather. Requests, alerts and thresholds are restored and the clock moves to the scenario's start.</p>
+        <div class="field"><label for="sim-scn" class="sr">Scenario</label><select id="sim-scn">${(state.meta.scenario.library || []).map((s) =>
+          `<option value="${esc(s.id)}" ${s.id === state.meta.scenario.id ? 'selected' : ''}>${esc(s.shows)} · ${esc(s.now)}</option>`).join('')}</select></div>
+        <p class="hint" id="sim-scn-desc">${esc(state.meta.scenario.description || '')}</p></section>
       <section class="sim-sec"><h3>Scenario clock and replay</h3><p class="hint">Scrub simulated observations and forecast, and replay the planned application.</p>
         <div id="sim-map-slot">${mapOnly}</div></section>
       <section class="sim-sec"><h3>Events</h3><p class="hint">Inject a sudden wind surge at the selected field, 15 minutes after the current scenario time, to test monitoring and alerts.</p>
@@ -146,6 +150,17 @@ function bind() {
   });
   root.querySelector('#sim-passes')?.addEventListener('change', (e) => set('showPasses', e.target.checked));
   root.querySelector('#sim-inject')?.addEventListener('click', () => state.mapCtl?.inject());
+  root.querySelector('#sim-scn')?.addEventListener('change', async (e) => {
+    try {
+      await api('/api/scenario/select', { method: 'POST', body: { id: e.target.value } });
+      state.meta = await api('/api/meta');
+      state.time = state.meta.scenario.now;
+      await loadPlan();
+      toast(`Scenario: ${state.meta.scenario.name}. Clock set to ${state.time.slice(11, 16)}.`);
+      emit('reset');
+      render();
+    } catch (err) { toast(err.message, true); }
+  });
   root.querySelector('#sim-reset')?.addEventListener('click', async () => {
     try {
       await api('/api/scenario/reset', { method: 'POST', body: {} });

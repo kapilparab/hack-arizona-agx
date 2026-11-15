@@ -318,6 +318,28 @@ def inject(body: dict = Body(...)):
     return SCENARIO.meta()
 
 
+@app.get("/api/scenarios")
+def scenarios():
+    from app.scenario import library
+    return {"active": SCENARIO.id, "scenarios": library()}
+
+
+@app.post("/api/scenario/select")
+def select_scenario(body: dict = Body(...)):
+    sid = body.get("id")
+    try:
+        SCENARIO.select(sid)
+    except KeyError:
+        raise HTTPException(404, f"Unknown scenario {sid}")
+    store.reset_alerts()
+    store.reset_observations()
+    store.seed(SCENARIO, force=True)
+    STATE["overrides"] = {}
+    store.record("scenario", f"Demo scenario switched to: {SCENARIO.spec['name']}", {"id": sid}, scenario_time=SCENARIO.now.isoformat())
+    p = _plan("scenario switched")
+    return {"scenario": SCENARIO.meta(), "plan_order": p["order"]}
+
+
 @app.post("/api/scenario/reset")
 def reset(body: dict = Body(default={})):
     SCENARIO.reset_events()
@@ -621,7 +643,7 @@ def get_forecast(field_id: str, time: str | None = None, horizon_h: int = 12):
                 "message": "No paired-height sensor covers this field, so no forecast can be issued."}
     r = forecast.forecast(SCENARIO, f["sensor_id"], at, STATE["overrides"], max(1, min(12, horizon_h)))
     r["field_id"] = field_id
-    key = (field_id, r["issued_at"])
+    key = (SCENARIO.id, field_id, r["issued_at"])
     if r.get("hours") and key not in _FCST_LOGGED:
         _FCST_LOGGED.add(key)
         w = r["window"]

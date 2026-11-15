@@ -46,6 +46,84 @@ GAPS = [{"sensor": "S2", "height": "upper", "day": 0, "start": 12.0, "end": 12.7
 
 DEMO_NOW = time(5, 30)
 
+# ---------------------------------------------------------------- library
+# Additional scenarios adapted from the backend-implementation branch's scenario set
+# (katabatic shear, clean window) plus an evening-onset case for the forecaster.
+# Keyframes: hour -> (t_low, t_high, w_low, w_high, dir_low_from, dir_high_from, rh). All SIMULATED.
+
+# Katabatic drainage: cold air slides downslope from the NE at 5 ft while the 30 ft flow is
+# from the SW and much stronger. No inversion beyond sensor uncertainty, low wind inside the
+# window, so a single low station says Go; the pair shows large speed and direction shear.
+_KAT_S1 = dict(_S1_DAY0)
+_KAT_S1.update({
+    0: (55, 54.6, 4.5, 11.0, 45, 215, 45), 3: (52, 51.7, 5.0, 12.0, 40, 220, 48),
+    5: (50, 49.7, 5.2, 12.5, 40, 220, 50), 6: (50, 49.8, 5.5, 13.0, 45, 225, 50),
+    7: (52, 51.6, 5.5, 12.0, 50, 225, 48), 8: (56, 55.2, 5.8, 10.0, 60, 230, 44),
+    9: (61, 59.8, 6.0, 8.0, 200, 235, 40), 10: (65, 63, 6.5, 8.0, 230, 240, 36),
+    18: (60, 59.4, 5.0, 8.0, 60, 220, 55), 20: (57, 56.5, 4.5, 10.0, 45, 215, 55), 24: (55, 54.6, 4.5, 11.0, 45, 215, 55)})
+_KAT_S2 = dict(_S2_DAY0)
+_KAT_S2.update({0: (55, 54.9, 4.5, 6.0, 45, 60, 45), 5: (51, 50.8, 5.0, 6.5, 40, 55, 50), 6: (51, 50.9, 5.2, 6.8, 45, 60, 50),
+                7: (53, 52.7, 5.4, 7.0, 50, 60, 48), 9: (62, 60.5, 6.0, 7.5, 210, 230, 38), 24: (55, 54.9, 4.5, 6.0, 45, 60, 55)})
+
+# Well-mixed breezy day: steady 5-8 mph, upper air cooler than lower air all day. Go is expected.
+def _mixed(base_t, amp):
+    import math as _m
+    out = {}
+    for h, w in ((0, 5.5), (3, 5.2), (5, 5.0), (6, 5.2), (7, 5.6), (9, 6.2), (12, 7.0), (14, 7.8), (15, 8.0),
+                 (17, 7.0), (19, 6.0), (21, 5.6), (24, 5.5)):
+        t = base_t + amp * _m.sin(_m.pi * (h - 9) / 12) if 6 <= h <= 21 else base_t - amp * 0.4
+        out[h] = (round(t, 1), round(t - 1.4, 1), w, round(w * 1.25, 1), 250, 258, 35)
+    return out
+_MIX_S1, _MIX_S2 = _mixed(60, 10), _mixed(61, 10)
+
+# Evening onset: a calm, clear evening. At 17:00 the masts are mixed and the wind is in the
+# window, but surface cooling builds an inversion after sunset and the wind drops.
+_EVE_S1 = dict(_S1_DAY1)
+_EVE_S1.update({15: (71, 68.5, 6.0, 7.5, 245, 250, 28), 16: (69, 66.8, 5.6, 7.0, 250, 255, 30),
+                17: (66.5, 64.8, 5.0, 6.5, 255, 262, 32), 17.5: (64.5, 63.7, 4.6, 6.0, 262, 275, 34),
+                18: (62.3, 62.6, 4.1, 5.6, 280, 300, 36), 18.5: (60.2, 61.6, 3.6, 5.2, 310, 335, 40),
+                19: (58.4, 60.6, 3.2, 4.9, 330, 355, 44), 20: (56, 59.2, 2.8, 4.5, 340, 10, 50),
+                22: (53.5, 57, 2.5, 4.2, 345, 15, 56), 24: (52, 55.5, 2.8, 4.0, 340, 15, 60)})
+_EVE_S2 = dict(_S2_DAY1)
+_EVE_S2.update({16: (69, 67.2, 5.5, 7.0, 300, 310, 30), 17: (66.5, 65.2, 5.0, 6.5, 305, 315, 32),
+                18: (62.5, 62.5, 4.2, 5.5, 315, 325, 36), 18.5: (60.5, 61.2, 3.8, 5.2, 320, 330, 40),
+                19: (58.6, 60, 3.4, 4.9, 325, 335, 44), 20: (56, 58.2, 3.0, 4.6, 330, 340, 50), 24: (54, 55.5, 3.5, 5.0, 330, 340, 60)})
+
+_DRY = ({0: 5, 24: 5}, {0: 5, 24: 5})
+LIBRARY = {
+    "yuma-dawn-inversion": {
+        "name": "Yuma Valley dawn inversion (simulated)", "now": DEMO_NOW,
+        "description": "Clear, calm night: 30 ft is several °F warmer than 5 ft at dawn while 5 ft wind is inside the window. "
+                       "A single low station says Go; the pair says Stop until the inversion breaks mid-morning.",
+        "shows": "Inversion blind spot", "expected_now": {"S1": "STOP"},
+        "keys": KEYS, "rain": (_RAIN0, _RAIN1), "gaps": GAPS},
+    "katabatic-shear": {
+        "name": "Katabatic drainage wind shear (simulated)", "now": DEMO_NOW,
+        "description": "Cold air drains downslope from the NE at 5 ft while 30 ft wind blows from the SW at 12-13 mph. "
+                       "No inversion and 5 ft wind is inside the window, so a single low station says Go; the pair flags "
+                       "large speed and direction differences between heights (Field A, mast S1).",
+        "shows": "Wind shear between heights", "expected_now": {"S1": "CAUTION"},
+        "keys": {"S1": (_KAT_S1, _S1_DAY1), "S2": (_KAT_S2, _S2_DAY1)}, "rain": _DRY, "gaps": []},
+    "evening-onset": {
+        "name": "Evening inversion onset (simulated)", "now": time(17, 0),
+        "description": "Calm, clear evening. At 17:00 the air is mixed and wind is inside the window (Go), but surface cooling "
+                       "builds an inversion after sunset. Shows the outlook warning before conditions turn bad.",
+        "shows": "Warning before conditions turn bad", "expected_now": {"S1": "GO"},
+        "keys": {"S1": (_EVE_S1, _S1_DAY1), "S2": (_EVE_S2, _S2_DAY1)}, "rain": _DRY, "gaps": []},
+    "well-mixed": {
+        "name": "Well-mixed breezy day (simulated)", "now": DEMO_NOW,
+        "description": "Steady 5-8 mph breeze and upper air cooler than lower air all day. No flags are expected: the tool "
+                       "does not always say Stop.",
+        "shows": "Clean spray window", "expected_now": {"S1": "GO"},
+        "keys": {"S1": (_MIX_S1, _MIX_S1), "S2": (_MIX_S2, _MIX_S2)}, "rain": _DRY, "gaps": []},
+}
+DEFAULT_SCENARIO = "yuma-dawn-inversion"
+
+
+def library():
+    return [{"id": k, "name": v["name"], "description": v["description"], "shows": v["shows"], "now": v["now"].strftime("%H:%M")}
+            for k, v in LIBRARY.items()]
+
 
 def _interp(frames: dict, h: float):
     ks = sorted(frames)
@@ -65,20 +143,30 @@ def _interp(frames: dict, h: float):
 
 
 class Scenario:
-    def __init__(self, day0=None):
+    def __init__(self, day0=None, scenario_id: str = DEFAULT_SCENARIO):
         today = (day0 or datetime.now(MST).date())
         self.day0 = datetime.combine(today, time(0, 0), MST)
-        self.now = datetime.combine(today, DEMO_NOW, MST)
         self.end = self.day0 + timedelta(days=2)
         self.events = []  # injected critical changes
+        self.select(scenario_id)
+
+    def select(self, scenario_id: str):
+        """Switch to a library scenario. Clears injected events and moves the clock to its start time."""
+        if scenario_id not in LIBRARY:
+            raise KeyError(scenario_id)
+        sc = LIBRARY[scenario_id]
+        self.id, self.spec = scenario_id, sc
+        self.keys, self.rain, self.gaps = sc["keys"], sc["rain"], sc["gaps"]
+        self.now = datetime.combine(self.day0.date(), sc["now"], MST)
+        self.events = []
 
     # ------------------------------------------------------------------ meta
     def meta(self):
-        return {"id": "yuma-dawn-inversion", "name": "Yuma Valley dawn inversion (simulated)",
+        return {"id": self.id, "name": self.spec["name"], "shows": self.spec["shows"], "library": library(),
                 "day0": self.day0.isoformat(), "now": self.now.isoformat(), "end": self.end.isoformat(),
                 "timezone": "America/Phoenix (MST, UTC-7, no DST)", "slot_min": SLOT_MIN,
                 "status": "simulated",
-                "description": "Simulated paired-height masts S1 and S2 at 5 ft and 30 ft. Times before the scenario clock "
+                "description": self.spec["description"] + " Simulated paired-height masts S1 and S2. Times before the scenario clock "
                                "are simulated observations; later times are a simulated scenario forecast.",
                 "events": self.events}
 
@@ -99,12 +187,12 @@ class Scenario:
     # -------------------------------------------------------------- readings
     def reading(self, sensor_id: str, t: datetime) -> dict | None:
         """Paired-height reading for the slot containing t, or None outside horizon/unknown sensor."""
-        if sensor_id not in KEYS or not (self.day0 <= t < self.end):
+        if sensor_id not in self.keys or not (self.day0 <= t < self.end):
             return None
         slot = self.floor_slot(t)
         day = (slot.date() - self.day0.date()).days
         h = slot.hour + slot.minute / 60
-        tl, th, wl, wh, dl, dh, rh = _interp(KEYS[sensor_id][day], h)
+        tl, th, wl, wh, dl, dh, rh = _interp(self.keys[sensor_id][day], h)
         from app.demo_data import sensor as _sensor, SIM_ACCURACY
         meta = _sensor(sensor_id)
         T = {x["level"]: x for x in meta["temp"]}
@@ -122,7 +210,7 @@ class Scenario:
         lower["gust_mph"] = round(wl * 1.35, 1)
         if not upper["wind_installed"]:
             upper["wind_note"] = "No wind sensor installed at this level"
-        for g in GAPS:
+        for g in self.gaps:
             if g["sensor"] == sensor_id and g["day"] == day and g["start"] <= h < g["end"]:
                 target = upper if g["height"] == "upper" else lower
                 target["temp_f"] = None
@@ -170,7 +258,7 @@ class Scenario:
         slot = self.floor_slot(t)
         day = (slot.date() - self.day0.date()).days
         h = slot.hour + slot.minute / 60
-        frames = _RAIN0 if day == 0 else _RAIN1
+        frames = self.rain[0] if day == 0 else self.rain[1]
         ks = sorted(frames)
         for a, b in zip(ks, ks[1:]):
             if a <= h <= b:
