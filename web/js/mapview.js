@@ -1,5 +1,5 @@
 import { state, api, on, emit, chip, esc, icon, when, hm, dur, addMin, minutesBetween, fieldProps, planFor, toast, stateBox,
-  showAlert, hideAlert, loadPlan, compass, statusText, demoText } from './core.js';
+  showAlert, hideAlert, loadPlan, compass, statusText, demoText, setTheme } from './core.js';
 import { statusPanel, equipmentPanel } from './panels.js';
 import { nozzleCards, liquidCard, terrainCard, sunElevation } from './insight.js';
 
@@ -623,6 +623,9 @@ function renderTimeMeta() {
   const s = document.getElementById('tslider');
   if (s) s.value = Math.round((new Date(state.time) - new Date(state.meta.scenario.day0)) / 900000);
   updatePlayLabel();
+  // Switch day/night as soon as the clock crosses sunrise or sunset (slider, Now, replay),
+  // without waiting for the data refresh.
+  if (sceneIsNight() !== V.night) applyTheme();
 }
 
 // ------------------------------------------------------------- playback
@@ -1141,11 +1144,15 @@ export function sceneIsNight() {
   return sunElevation(new Date(state.time), c[1], c[0]) < -0.833;
 }
 function applyTheme() {
-  const map = V?.map; if (!map?.getLayer('imagery')) return;
+  if (!V) return;
   const night = sceneIsNight();
   const day = !night;
   V.night = night;
   document.getElementById('mv')?.classList.toggle('scene-night', night);
+  // With Auto lighting the whole interface follows the scene, not only the imagery.
+  // (setTheme emits 'theme', which re-enters here once with no further change.)
+  if ((UI().lighting || 'auto') === 'auto' && state.theme !== (night ? 'dark' : 'light')) setTheme(night ? 'dark' : 'light', false);
+  const map = V.map; if (!map?.getLayer('imagery')) return; // map style not loaded yet (or 2D fallback)
   updateMapChip();
   map.setPaintProperty('imagery', 'raster-brightness-max', day ? 0.95 : 0.34);
   map.setPaintProperty('imagery', 'raster-saturation', day ? -0.08 : -0.55);
