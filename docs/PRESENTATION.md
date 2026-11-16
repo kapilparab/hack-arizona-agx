@@ -31,7 +31,7 @@ For setup details and full feature notes, see [README.md](../README.md).
 | Terrain | **USGS 3DEP** (ImageServer exportImage and EPQS), scikit-image, tifffile, Pillow | Real field elevation, slope, relief, contours, click-to-get elevation, elevation profile along a pass |
 | Real weather (experimental) | **HRRR** via Herbie, cfgrib, eccodes, xarray; **AZMET** stations; **NWS** hourly forecast | Regional context and validation only. It never replaces the local paired sensors. |
 | AI (optional, off by default) | Anthropic SDK, `claude-opus-5-5` | Only rephrases explanations the rules engine already wrote. Turned on with `OBSERVAIR_AI=1` plus an API key. Not used in the demo. |
-| Tests | **pytest** (63 tests), FastAPI TestClient; **Playwright** for browser checks | Covers the engine, scheduler, nozzles, measurement model, decisions and the API |
+| Tests | **pytest** (93 tests), FastAPI TestClient; **Playwright** for browser checks | Covers the engine, scheduler, nozzles, measurement model, decisions, ML forecaster, scenario library, product risk factors and the API |
 
 **API keys needed: none.** Every data source the demo uses is public. The optional AI path needs an Anthropic key, but the demo doesn't use it.
 
@@ -131,7 +131,7 @@ Scenario clock: **Sunday 15 Nov 2026, 05:30 MST**, a simulated dawn inversion in
 | 1:20 | Same, scroll | Show **Height references**, the **Trend** card and the **Decision ID**. | "Every number is tied to an installed height. This decision has an ID that follows it to the schedule and the record." |
 | 1:40 | Left panel, **Setup** | Show the recommended rig with time and cost savings. Open **Compare other equipment** and pick the drone: a blocking conflict appears. | "The drone can't confirm the product's droplet-class requirement, so it's blocked. Equipment can't clear an inversion either." |
 | 2:05 | **Schedule** | Request order vs proposed order: **B 06:15–06:50 → A 08:45–09:40 → C tomorrow 06:15–08:20**. D has no sensor, so it isn't scheduled. Scroll to **Before each planned job**. | "We try every order. Reordering fits B before its deadline, and A runs after its inversion breaks. Rain and surface concerns are listed separately, and anything the product label doesn't give us stays Unknown." |
-| 2:30 | **Field map**, then **Prototype controls → Simulation** | Press **Play** on the map's playback bar, then **Simulate critical change** in Prototype controls. Acknowledge the alert with a name. | "Monitoring: one grouped alert. It only clears after two clean checks in a row." |
+| 2:30 | **Field map**, then **Prototype controls → Simulation** | With Field A selected, press **Simulate critical change** in Prototype controls. It places a wind surge inside the 08:45–09:40 job and starts the replay; the vehicle stops at 09:00. Acknowledge the alert with a name. | "Monitoring: one grouped alert. It only clears after two clean checks in a row." |
 | 2:45 | **Records** | Show the alert, acknowledgement, decision ID and *Simulated* flag. Click **Export CSV**. Toggle **ES** on an explanation. | "A complete record in English or Spanish, with nothing fabricated." |
 
 **Backup lines if something breaks:**

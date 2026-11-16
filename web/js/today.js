@@ -13,10 +13,12 @@ const shortDay = (iso) => (isToday(iso) ? '' : ` <span class="day">${esc(when(is
 export async function renderToday(root) {
   root.innerHTML = `<div class="page lineup-page"><div class="skeleton" style="height:56px;max-width:420px"></div>
     <div class="lineup-grid" style="margin-top:20px"><div class="skeleton" style="height:420px"></div><div class="skeleton" style="height:420px"></div></div></div>`;
-  let all, plan, timelines;
+  let all, plan, timelines, outlooks;
   try {
     [all, plan] = await Promise.all([api('/api/assess/all?time=' + encodeURIComponent(state.meta.scenario.now)), loadPlan()]);
     timelines = await Promise.all(state.fields.fields.features.map((f) => api('/api/timeline?field_id=' + f.properties.id)));
+    outlooks = await Promise.all(state.fields.fields.features.map((f) =>
+      api('/api/forecast?field_id=' + f.properties.id + '&time=' + encodeURIComponent(state.meta.scenario.now)).catch(() => null)));
   } catch (e) {
     root.innerHTML = `<div class="page lineup-page">${stateBox('error', 'Today could not load', e.message, '<button class="btn sm" style="margin-top:8px" onclick="location.reload()">Reload</button>')}</div>`;
     return;
@@ -76,6 +78,8 @@ export async function renderToday(root) {
               <a class="btn sm ghost" href="#/map?field=${esc(f.field_id)}" aria-label="Open ${esc(fieldName(f.field_id))} on the map">Map</a></li>`).join('')}</ul>`
             : '<p class="muted">No field has an active flag at the scenario time.</p>'}
         </section>
+
+        ${outlookBlock(outlooks.filter(Boolean), now)}
 
         <section class="side-block" aria-labelledby="win-h">
           <div class="block-title"><h2 id="win-h">Weather windows</h2><span class="muted small">Today and tomorrow, 05:00–20:00</span></div>
@@ -189,6 +193,39 @@ function offStrip(r) {
     </div>
     <button class="btn sm" type="button" data-explain="${kind}" data-field="${esc(j.field_id)}">Why?</button>
   </div></li>`;
+}
+
+// ML outlook: calibrated probability of a Stop-level drift flag, 1-12 h ahead (advisory).
+function outlookBlock(list, now) {
+  const ok = list.filter((o) => o.hours && o.hours.length);
+  if (!list.length) return '';
+  const sk = list[0].skill;
+  const rows = ok.map((o) => {
+    const fp = fieldProps(o.field_id);
+    const bars = o.hours.map((h) => `<span class="fc-bar ${h.band}" style="--p:${Math.max(0.04, h.p_flag)}"
+      title="${hm(h.time)}: ${Math.round(h.p_flag * 100)}% chance of a Stop-level drift flag (${esc(h.band_label.toLowerCase())})${h.scenario_flag == null ? '' : h.scenario_flag ? ' · scenario forecast: flagged' : ' · scenario forecast: clear'}"></span>`).join('');
+    const w = o.window;
+    return `<div class="fc-row">
+      <p class="win-head"><b>${esc(fp.name)}</b> <span class="muted">${esc(o.sensor_id)}</span>
+        <span class="win-sum">${w ? `Likely window ${hm(w.start)}–${hm(w.end)}` : 'No low-risk window in 12 h'}</span></p>
+      <div class="fc-bars" role="img" aria-label="${esc(fp.name)}: hourly chance of a Stop-level drift flag for the next ${o.hours.length} hours. ${w ? `Lowest from ${hm(w.start)} to ${hm(w.end)}.` : 'No two consecutive low-probability hours.'}">${bars}</div>
+      <div class="fc-axis"><span>${hm(o.hours[0].time)}</span><span>${hm(o.hours[Math.floor(o.hours.length / 2)].time)}</span><span>${hm(o.hours[o.hours.length - 1].time)}</span></div>
+      ${o.warning ? `<p class="marker-note">${icon('bell', 'sm')}<span>${esc(o.warning.text)}</span></p>` : ''}
+    </div>`;
+  }).join('');
+  const none = list.filter((o) => !o.hours || !o.hours.length).map((o) => `<p class="xs muted">${esc(fieldName(o.field_id))}: ${esc(o.message || 'No forecast.')}</p>`).join('');
+  return `<section class="side-block outlook" aria-labelledby="fc-h">
+    <div class="block-title"><h2 id="fc-h">Drift-flag outlook</h2><span class="muted small">ML · issued ${hm(now)}</span></div>
+    <p class="small muted">Chance that a Stop-level flag (inversion or wind outside the window) is present each hour. Advisory only: the status above always comes from measured readings.</p>
+    ${rows}${none}
+    <div class="legend"><span><i class="sw fc low"></i>Low &lt;20%</span><span><i class="sw fc moderate"></i>Moderate 20–50%</span><span><i class="sw fc high"></i>High ≥50%</span></div>
+    ${sk ? `<details class="fc-skill"><summary class="small">How good is this forecast?</summary>
+      <p class="xs">Scored on ${sk.test_days} held-out simulated days (${sk.test_rows.toLocaleString()} forecasts). Brier score <b>${sk.brier}</b> (lower is better) vs ${sk.brier_persistence} for persistence and ${sk.brier_climatology} for time-of-day climatology: <b>${sk.skill_vs_persistence_pct}%</b> and <b>${sk.skill_vs_climatology_pct}%</b> better. Mean calibration error ${Math.round(sk.calibration_error * 1000) / 10} percentage points.</p>
+      <table class="fc-rel"><thead><tr><th scope="col">Forecast</th><th scope="col">Avg forecast</th><th scope="col">Observed</th></tr></thead>
+      <tbody>${sk.reliability.map((r) => `<tr><td>${r.bin.replace('-', '–')}</td><td>${Math.round(r.mean_forecast * 100)}%</td><td>${Math.round(r.observed_rate * 100)}%</td></tr>`).join('')}</tbody></table>
+      <p class="xs muted demo-note">Gradient-boosted trees with isotonic calibration, trained on a simulated paired-height weather generator. Skill on real masts is unknown until validated on observed data.</p>
+    </details>` : ''}
+  </section>`;
 }
 
 function ribbon(tl) {

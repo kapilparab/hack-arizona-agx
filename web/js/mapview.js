@@ -1,5 +1,5 @@
 import { state, api, on, emit, chip, esc, icon, when, hm, dur, addMin, minutesBetween, fieldProps, planFor, toast, stateBox,
-  showAlert, hideAlert, loadPlan, compass, statusText, demoText } from './core.js';
+  showAlert, hideAlert, loadPlan, compass, statusText, demoText, setTheme } from './core.js';
 import { statusPanel, equipmentPanel } from './panels.js';
 import { nozzleCards, liquidCard, terrainCard, sunElevation } from './insight.js';
 
@@ -623,6 +623,9 @@ function renderTimeMeta() {
   const s = document.getElementById('tslider');
   if (s) s.value = Math.round((new Date(state.time) - new Date(state.meta.scenario.day0)) / 900000);
   updatePlayLabel();
+  // Switch day/night as soon as the clock crosses sunrise or sunset (slider, Now, replay),
+  // without waiting for the data refresh.
+  if (sceneIsNight() !== V.night) applyTheme();
 }
 
 // ------------------------------------------------------------- playback
@@ -754,10 +757,28 @@ async function monitorTick() {
 async function injectCritical() {
   const fp = fieldProps(state.selectedField);
   if (!fp.sensor_id) { toast('This field has no sensor to change.', true); return; }
-  const at = addMin(state.time, 15);
+  // The surge must land inside the replayed application, or the replay never meets it.
+  // Not playing: place it about a third of the way into the planned job and start the replay.
+  // Playing: 15 min after the replay time, as before.
+  const { r } = jobAndPlan();
+  const playing = !!V.play?.running;
+  const planned = !!r?.scheduled;
+  let at = addMin(state.time, 15);
+  if (planned && !playing) {
+    const len = Math.max(15, minutesBetween(r.start, r.end));
+    at = addMin(r.start, Math.min(len - 1, Math.max(15, Math.round((len * 0.3) / 15) * 15)));
+  }
   try {
     await api('/api/scenario/inject', { method: 'POST', body: { field_id: fp.id, time: at } });
-    toast(`Simulated wind surge scheduled at ${fp.name} from ${when(at)} for 60 min.`);
+    if (planned && !playing) {
+      stopPlay(true);
+      toast(`Simulated wind surge at ${fp.name} from ${hm(at)} for 60 min, during the planned application (${hm(r.start)}–${hm(r.end)}). Replay started: monitoring will stop the vehicle when the surge arrives.`);
+      startPlay();
+    } else if (!planned) {
+      toast(`Simulated wind surge at ${fp.name} from ${when(at)} for 60 min. This field has no planned application to replay; move the time slider to ${hm(at)} to see the Stop.`);
+    } else {
+      toast(`Simulated wind surge scheduled at ${fp.name} from ${when(at)} for 60 min.`);
+    }
   } catch (e) { toast(e.message, true); }
 }
 
@@ -1123,11 +1144,15 @@ export function sceneIsNight() {
   return sunElevation(new Date(state.time), c[1], c[0]) < -0.833;
 }
 function applyTheme() {
-  const map = V?.map; if (!map?.getLayer('imagery')) return;
+  if (!V) return;
   const night = sceneIsNight();
   const day = !night;
   V.night = night;
   document.getElementById('mv')?.classList.toggle('scene-night', night);
+  // With Auto lighting the whole interface follows the scene, not only the imagery.
+  // (setTheme emits 'theme', which re-enters here once with no further change.)
+  if ((UI().lighting || 'auto') === 'auto' && state.theme !== (night ? 'dark' : 'light')) setTheme(night ? 'dark' : 'light', false);
+  const map = V.map; if (!map?.getLayer('imagery')) return; // map style not loaded yet (or 2D fallback)
   updateMapChip();
   map.setPaintProperty('imagery', 'raster-brightness-max', day ? 0.95 : 0.34);
   map.setPaintProperty('imagery', 'raster-saturation', day ? -0.08 : -0.55);

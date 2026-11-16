@@ -243,7 +243,14 @@ export function initTheme() {
   let t = null;
   try { t = localStorage.getItem('cg-theme'); } catch {}
   setTheme(t || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'), false);
-  document.getElementById('theme-toggle')?.addEventListener('click', () => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const t = state.theme === 'dark' ? 'light' : 'dark';
+    // On the map, a manual day/night choice overrides Auto lighting so the clock does not flip it back.
+    // Set it before setTheme: the map's theme listener would otherwise re-apply Auto.
+    if (state.mapCtl) state.ui.lighting = t === 'dark' ? 'night' : 'day';
+    setTheme(t);
+    if (state.mapCtl) state.mapCtl.apply('lighting', state.ui.lighting);
+  });
 }
 
 // Map view preferences shared by the map and the prototype drawer.

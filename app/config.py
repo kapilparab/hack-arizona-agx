@@ -26,6 +26,9 @@ DEFAULT_THRESHOLDS = {
     "downwind_cone_deg": {"value": 45.0, "source": PROTOTYPE + " - half-angle for 'air moving toward' attention check"},
     "attention_radius_m": {"value": 400.0, "source": PROTOTYPE + " - attention radius, NOT a safe distance"},
     "rain_prob_block_pct": {"value": 40.0, "source": PROTOTYPE + " - forecast probability treated as conflicting with a rain-free interval"},
+    "vol_high_caution_temp_f": {"value": 80.0, "source": PROTOTYPE + " - high-volatility product: Caution at or above this air temperature (volatility rises with temperature; replace with the label)"},
+    "vol_high_stop_temp_f": {"value": 90.0, "source": PROTOTYPE + " - high-volatility product: Stop at or above this air temperature (replace with the label)"},
+    "vol_moderate_caution_temp_f": {"value": 90.0, "source": PROTOTYPE + " - moderate-volatility product: Caution at or above this air temperature"},
     "sensor_coverage_m": {"value": 1500.0, "source": PROTOTYPE + " - max distance for a field to use a paired-height sensor"},
 }
 
